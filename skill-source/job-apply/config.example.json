@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "resume_path": null,
+  "browser": "auto",
+  "submission_mode": "review",
+  "history_path": "~/.local/state/job-apply/history.json",
+  "profile": {
+    "full_name": null,
+    "email": null,
+    "phone": null,
+    "location": null,
+    "linkedin_url": null,
+    "portfolio_url": null,
+    "work_authorization": null,
+    "requires_sponsorship": null,
+    "willing_to_relocate": null,
+    "compensation_expectations": null,
+    "availability": null
+  },
+  "answers": []
+}

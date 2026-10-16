@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Local job application fixture</title>
+<style>body{font:18px system-ui;max-width:44rem;margin:3rem auto}label{display:block;margin:1rem 0}input,textarea,select{display:block;font:inherit}textarea{width:95%}button{font:inherit;padding:.5rem}</style>
+<h1>Example Company: Software Engineer</h1>
+<p>This local fixture sends no data. Use a fictional candidate and test resume.</p>
+<form id="application">
+  <label>Full name <input name="name" required autocomplete="name"></label>
+  <label>Email <input name="email" type="email" required autocomplete="email"></label>
+  <label>Resume <input name="resume" type="file" accept=".pdf,.txt,.md" required></label>
+  <label>Do you require sponsorship?
+    <select name="sponsorship" required><option value="">Choose</option><option>Yes</option><option>No</option></select>
+  </label>
+  <label>Why are you interested in this role? (300 characters)
+    <textarea name="motivation" required maxlength="300"></textarea>
+  </label>
+  <label>Preferred work arrangement
+    <select id="arrangement"><option>Remote</option><option>Relocation</option></select>
+  </label>
+  <label id="relocation" hidden>Relocation availability <input name="relocation"></label>
+  <label>Fixture behavior
+    <select id="behavior"><option value="confirm">Show confirmation</option><option value="ambiguous">Ambiguous result</option><option value="blocked">Simulate login blocker</option></select>
+  </label>
+  <button>Submit application</button>
+</form>
+<p id="result" role="status"></p>
+<script>
+const form = document.querySelector('form');
+const arrangement = document.querySelector('#arrangement');
+arrangement.addEventListener('change', () => {
+  const active = arrangement.value === 'Relocation';
+  document.querySelector('#relocation').hidden = !active;
+  form.elements.relocation.required = active;
+});
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  const mode = document.querySelector('#behavior').value;
+  document.querySelector('#result').textContent = mode === 'confirm'
+    ? 'Application received. Confirmation MOCK-123.'
+    : mode === 'blocked' ? 'Please sign in to continue.' : 'Request timed out. Outcome unavailable.';
+  if (mode === 'confirm') form.hidden = true;
+});
+</script>
+</html>
