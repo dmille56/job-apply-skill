@@ -120,6 +120,15 @@ Optional **resume-qna**: install it through your agent's normal skills mechanism
 
 ## Usage and recovery
 
+Optional verification email uses [gogcli](https://github.com/openclaw/gogcli). Install `gog` separately, configure its OAuth credentials, then authorize the candidate's Gmail mailbox and create the required account alias:
+
+```sh
+gog auth add you@gmail.com --services gmail --gmail-scope readonly --readonly
+gog auth alias set job-apply you@gmail.com
+```
+
+The skill uses `job-apply email-search` and `job-apply email-get` for verification codes, sign-in/confirmation links, and relevant submission receipts. Both pin the `job-apply` alias and enforce read-only, no-send, and exact command restrictions. They cannot send mail, create drafts, mark messages read, or change email settings. Setup remains user-managed; missing access pauses the application. Existing JSON configs need no changes. See [email setup and workflow](skill-source/job-apply/references/email.md) for scope requirements and verification boundaries.
+
 ```text
 Use job-apply to apply to https://example.com/jobs/123.
 

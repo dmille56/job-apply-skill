@@ -6,6 +6,8 @@
 job-apply init
 job-apply --config /path/to/config.json validate
 job-apply resume-text
+job-apply email-search 'to:you@gmail.com from:accounts.example.com newer_than:1d subject:verification'
+job-apply email-get 18abcdef01234567
 job-apply queue 'https://example.com/jobs/123' 'https://example.com/jobs/456'
 job-apply queue --input /path/to/jobs.txt
 job-apply history
@@ -19,6 +21,8 @@ job-apply recover --id JOB_ID
 Commands output JSON except `resume-text`, which outputs extracted text. Errors go to stderr and return nonzero. `init` creates an example only when no configuration exists; edit it before validation. It does not create a resume.
 
 ## Settings
+
+`email-search` and `email-get` require separately configured gogcli with the fixed `job-apply` account alias. They enforce read-only/no-send access and do not need or change JSON configuration. Read [email.md](email.md) for user setup, verification matching, and email restrictions.
 
 Copy `config.example.json` and replace the null resume path. The default history location is `~/.local/state/job-apply/history.json`. `~` expands to the current target user's home; relative resume/history paths resolve against the config file. `JOB_APPLY_CONFIG` is a file path; an explicit `--config` takes priority. An explicit run override controls the agent's browser/submission choice without rewriting config.
 

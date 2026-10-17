@@ -1,5 +1,9 @@
 """Behavior checks using isolated configuration/history; no external submissions."""
 import concurrent.futures
+import argparse
+import contextlib
+import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -7,10 +11,65 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 SOURCE = Path(sys.argv.pop(1)).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / "skill-source/job-apply"
 HELPER = SOURCE / "scripts/job_apply.py"
+
+
+class EmailTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("job_apply", HELPER)
+        self.helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.helper)
+
+    def test_reads_pin_account_and_guards_without_shell_or_persistence(self):
+        query = '-in:trash to:candidate@example.com $(touch /tmp/should-not-exist) --readonly=false'
+        for args, tail in (
+            (argparse.Namespace(command="email-search", query=query),
+             ["gmail", "messages", "search", "--max=5", "--include-recipients", "--", query]),
+            (argparse.Namespace(command="email-get", message_id="18abcdef01234567"),
+             ["gmail", "get", "--format=full", "--", "18abcdef01234567"]),
+        ):
+            with self.subTest(command=args.command), mock.patch.dict(os.environ, {}, clear=True), \
+                    mock.patch.object(self.helper.shutil, "which", return_value="/bin/gog"), \
+                    mock.patch.object(self.helper.subprocess, "run") as run, \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout:
+                run.return_value = subprocess.CompletedProcess([], 0, '{"messages": []}\n', "")
+                self.helper.email(args)
+                command = run.call_args.args[0]
+                self.assertEqual(command, ["gog", "--account=job-apply", "--readonly", "--gmail-no-send",
+                                          "--enable-commands-exact=gmail.messages.search,gmail.get",
+                                          "--no-input", "--wrap-untrusted", "--json", *tail])
+                self.assertNotIn("shell", run.call_args.kwargs)
+                self.assertEqual(stdout.getvalue(), '{"messages": []}\n')
+
+    def test_missing_gog_invalid_inputs_and_auth_overrides_never_run(self):
+        cases = [({}, None, {"query": "subject:verification"}),
+                 ({}, "/bin/gog", {"query": "  "}),
+                 ({}, "/bin/gog", {"message_id": "--readonly=false"}),
+                 ({"GOG_ACCESS_TOKEN": "secret"}, "/bin/gog", {"query": "test"}),
+                 ({"GOG_AUTH_MODE": "adc"}, "/bin/gog", {"query": "test"})]
+        for env, executable, fields in cases:
+            args = argparse.Namespace(command="email-search" if "query" in fields else "email-get", **fields)
+            with self.subTest(fields=fields, env=env), mock.patch.dict(os.environ, env, clear=True), \
+                    mock.patch.object(self.helper.shutil, "which", return_value=executable), \
+                    mock.patch.object(self.helper.subprocess, "run") as run:
+                with self.assertRaises(ValueError):
+                    self.helper.email(args)
+                run.assert_not_called()
+
+    def test_failed_reads_do_not_retry_or_expose_mail(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(self.helper.shutil, "which", return_value="/bin/gog"), \
+                mock.patch.object(self.helper.subprocess, "run") as run, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            run.return_value = subprocess.CompletedProcess([], 4, "private body", "private diagnostic")
+            with self.assertRaisesRegex(ValueError, "exit 4"):
+                self.helper.email(argparse.Namespace(command="email-search", query="test"))
+            self.assertEqual(stdout.getvalue(), "")
+            run.assert_called_once()
 
 
 class HelperTests(unittest.TestCase):

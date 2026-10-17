@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local configuration and application bookkeeping. No browser/network actions."""
+"""Configuration, application bookkeeping, and read-only verification email via gog."""
 
 import argparse
 import contextlib
@@ -286,6 +286,31 @@ def recover(args):
     output(result)
 
 
+def email(args):
+    """Expose only two reads; never accept gog flags or a different account."""
+    if not shutil.which("gog"):
+        fail("Email verification requires gogcli (gog) and its job-apply account alias; see references/email.md")
+    if os.environ.get("GOG_ACCESS_TOKEN") or os.environ.get("GOG_AUTH_MODE", "oauth") != "oauth":
+        fail("Email verification requires stored OAuth for the job-apply alias; remove direct-token/ADC overrides")
+    command = ["gog", "--account=job-apply", "--readonly", "--gmail-no-send",
+               "--enable-commands-exact=gmail.messages.search,gmail.get",
+               "--no-input", "--wrap-untrusted", "--json"]
+    if args.command == "email-search":
+        if not args.query.strip():
+            fail("Email search query must not be empty")
+        command += ["gmail", "messages", "search", "--max=5", "--include-recipients", "--", args.query]
+    else:
+        if not args.message_id or not all(c in "0123456789abcdefABCDEF" for c in args.message_id):
+            fail("Expected a Gmail message ID from email-search (hexadecimal)")
+        command += ["gmail", "get", "--format=full", "--", args.message_id]
+    # No shell, passthrough options, persistence, or retries. Old gog versions fail closed.
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    if result.returncode:
+        fail("gog email read failed; check the job-apply alias, read-only authorization, and gog version "
+             "(exit " + str(result.returncode) + "). No fallback or settings changes attempted.")
+    print(result.stdout, end="")
+
+
 def install(args):
     home = Path(args.home).expanduser().absolute() if args.home else Path.home()
     destinations = [Path(x).expanduser().absolute() for x in args.skill_dir] if args.skill_dir else [
@@ -340,6 +365,10 @@ def main():
     subs.add_parser("validate")
     subs.add_parser("resume-text")
     subs.add_parser("history")
+    sub = subs.add_parser("email-search", help="Search verification email through the job-apply gog alias (read-only)")
+    sub.add_argument("query", help="Narrow Gmail query for the current application")
+    sub = subs.add_parser("email-get", help="Read one Gmail message through the job-apply gog alias (read-only)")
+    sub.add_argument("message_id")
     sub = subs.add_parser("queue")
     sub.add_argument("urls", nargs="*")
     sub.add_argument("--input", help="One URL per line; - for stdin")
@@ -355,6 +384,8 @@ def main():
     try:
         if args.command in {"init", "install", "queue", "update", "recover"}:
             globals()[args.command](args)
+        elif args.command in {"email-search", "email-get"}:
+            email(args)
         elif args.command == "history":
             with history(args, write=False) as data:
                 output(data)
