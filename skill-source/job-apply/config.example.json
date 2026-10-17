@@ -1,7 +1,7 @@
 {
   "version": 1,
   "resume_path": null,
-  "browser": "auto",
+  "browser": "playwright",
   "submission_mode": "review",
   "history_path": "~/.local/state/job-apply/history.json",
   "profile": {

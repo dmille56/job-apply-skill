@@ -18,9 +18,9 @@
       description = "Initial resume filename as a string, not a Nix path; used only when configuration is absent.";
     };
     browser = lib.mkOption {
-      type = lib.types.enum [ "auto" "vessel" "terminal" ];
-      default = "auto";
-      description = "Initial browser choice.";
+      type = lib.types.enum [ "auto" "playwright" "terminal" ];
+      default = "playwright";
+      description = "Initial browser choice; auto also uses Playwright MCP. Terminal requires explicit selection.";
     };
     submissionMode = lib.mkOption {
       type = lib.types.enum [ "review" "auto" ];
@@ -40,7 +40,7 @@
     browserPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [];
-      description = "Optional existing Vessel or terminal-browser packages to install; MCP configuration remains manual.";
+      description = "Optional existing Playwright MCP or terminal-browser packages to install; MCP configuration remains manual.";
     };
   };
 

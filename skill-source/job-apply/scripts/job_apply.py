@@ -86,8 +86,8 @@ def validate_config(cfg, path, require_resume=True):
     allowed = {"version", "resume_path", "browser", "submission_mode", "history_path", "profile", "answers"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
-    if cfg.get("browser", "auto") not in {"auto", "vessel", "terminal"}:
-        fail("browser must be auto, vessel, or terminal")
+    if cfg.get("browser", "playwright") not in {"auto", "playwright", "terminal"}:
+        fail("browser must be playwright, terminal, or auto (Playwright MCP); replace legacy vessel with playwright")
     if cfg.get("submission_mode", "review") not in {"review", "auto"}:
         fail("submission_mode must be review or auto")
     resume = cfg.get("resume_path")
@@ -365,7 +365,7 @@ def main():
                 output({"valid": True, "config_path": str(path), "resume_path": str(resume),
                         "history_path": str(resolve_path(cfg.get("history_path",
                         "~/.local/state/job-apply/history.json"), path.parent)),
-                        "browser": cfg.get("browser", "auto"), "submission_mode": cfg.get("submission_mode", "review")})
+                        "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review")})
             elif resume.suffix.lower() == ".pdf":
                 if not shutil.which("pdftotext"):
                     fail("PDF extraction requires pdftotext (Poppler); use the Nix package or install Poppler")

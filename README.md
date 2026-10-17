@@ -1,6 +1,6 @@
 # Job Apply Skill
 
-A portable skill for Codex, Claude Code, OpenCode, and Pi that applies to supplied jobs one at a time using Vessel or terminal-browser. It supports a configurable resume, reusable application answers, optional resume-qna guidance, review or automatic submission, and resumable local history.
+A portable skill for Codex, Claude Code, OpenCode, and Pi that applies to supplied jobs one at a time using Playwright MCP by default, or terminal-browser when explicitly requested. It supports a configurable resume, reusable application answers, optional resume-qna guidance, review or automatic submission, and resumable local history.
 
 ## NixOS and Nix
 
@@ -24,7 +24,7 @@ Add this repository as a flake input named `job-apply`, then:
   jobApply = {
     enable = true;
     resumePath = "/home/you/Documents/resume.pdf";
-    browser = "auto";
+    browser = "playwright";
     submissionMode = "review";
   };
 }
@@ -73,7 +73,7 @@ Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8
 {
   "version": 1,
   "resume_path": "/home/you/Documents/resume.pdf",
-  "browser": "auto",
+  "browser": "playwright",
   "submission_mode": "review",
   "history_path": "~/.local/state/job-apply/history.json",
   "profile": {
@@ -110,11 +110,11 @@ The shared `~/.agents/skills/job-apply` installation serves Codex, OpenCode, and
 | OpenCode | `~/.agents/skills/job-apply` | `Use job-apply to apply to these URLs…` |
 | Pi | `~/.agents/skills/job-apply` | `/skill:job-apply Apply to these URLs…` |
 
-For **Vessel**, launch the browser and configure its MCP helper in your agent. The stdio command is `vessel-browser-mcp` with arguments `["--stdio"]`. Codex uses an `mcp_servers` TOML entry; Claude Code and current Pi use `mcpServers` JSON with `command`/`args`; OpenCode uses its local MCP entry with a command array. Use your installed agent's documentation for registration and permissions. Older Pi versions without native MCP need an appropriate extension or terminal-browser instead. The skill discovers actual tool schemas instead of assuming tool names. See [Vessel setup](https://github.com/unmodeled-tyler/vessel-browser).
+For **Playwright MCP**, configure your agent with command `playwright-mcp` and arguments `[]`. The command must be installed and available on the agent's PATH. The agent must expose the MCP tools and the server must have a working browser. See the [official Playwright MCP setup](https://github.com/microsoft/playwright-mcp) for client configuration and browser options.
 
 For **terminal-browser**, install it and its skill, use a supported graphical terminal, and check that `terminal-browser ls --json` works in the agent's environment. It controls a visible browser through its agent-browser-compatible CLI. Some hosts require additional sandbox permissions; the skill pauses if they are unavailable. See [terminal-browser setup](https://github.com/zenbu-labs/terminal-browser).
 
-`browser: "auto"` prefers reachable Vessel MCP tools, then terminal-browser. An explicit browser choice must be usable. A submission setting does not override browser or host permission prompts.
+`browser: "playwright"` is the default; legacy `auto` also selects Playwright MCP. Use terminal-browser only when explicitly requested for a run or configured with `browser: "terminal"`. If Playwright MCP is unavailable, the skill pauses for setup or a user-requested switch. Existing configs using `vessel` must change to `playwright`. An explicit browser choice must be usable. A submission setting does not override browser or host permission prompts.
 
 Optional **resume-qna**: install it through your agent's normal skills mechanism. Job Apply reads its instructions for longer answers. If its configured resume differs and it has no supported override, Job Apply uses its writing guidance directly with the selected job-apply resume without changing resume-qna.
 

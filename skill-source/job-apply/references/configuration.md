@@ -24,7 +24,7 @@ Copy `config.example.json` and replace the null resume path. The default history
 
 - `version`: `1`.
 - `resume_path`: path to a UTF-8 text or PDF resume. The file is uploaded unchanged.
-- `browser`: `auto`, `vessel`, or `terminal`.
+- `browser`: `playwright` (default, Playwright MCP), `terminal` (explicit terminal-browser selection), or legacy `auto` (also Playwright MCP). Missing Playwright MCP does not trigger automatic fallback. For existing configs, replace `vessel` with `playwright`; Vessel is no longer supported.
 - `submission_mode`: `review` or `auto`.
 - `history_path`: path to the writable JSON history.
 - `profile`: candidate facts keyed by descriptive field names. `null` means unknown. Country-specific authorization questions should include country context.

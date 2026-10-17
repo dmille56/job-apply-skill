@@ -1,6 +1,6 @@
 ---
 name: job-apply
-description: Fill and submit job applications from a single job URL or an ordered list, using a configured resume and reusable answers with Vessel or terminal-browser. Use when the user asks to apply to supplied jobs or resume an application batch.
+description: Fill and submit job applications from a single job URL or an ordered list, using a configured resume and reusable answers with Playwright MCP by default or terminal-browser when explicitly requested. Use when the user asks to apply to supplied jobs or resume an application batch.
 ---
 
 # Job Apply
@@ -15,7 +15,7 @@ Read [configuration.md](references/configuration.md) for configuration and helpe
 
 1. Run `HELPER validate`, read the selected configuration, and run `HELPER resume-text`. If config is missing, use `HELPER init` and ask the user for the resume and required profile details. Read the resume before answering application questions. PDF extraction requires Poppler's `pdftotext`; do not guess from a filename or unreadable document.
 2. Resolve browser and submission mode from explicit run instructions, then config. `review` is the default. Automatic submission applies only to the jobs the user asked to apply to; configuration alone is not a request to apply.
-3. Read only the selected browser reference: [Vessel](references/vessel.md) or [terminal-browser](references/terminal-browser.md). In `auto`, prefer reachable Vessel MCP tools, otherwise an available terminal-browser. A binary's presence does not prove its browser is usable. Honor explicit selection. Report missing dependencies; do not install software, edit agent settings, or switch browsers midway through an application without user direction.
+3. Use [Playwright MCP](references/playwright-mcp.md) by default (`browser: "playwright"`). The legacy `auto` setting also selects Playwright MCP. Use [terminal-browser](references/terminal-browser.md) only when the user explicitly requests it for this run or selects `browser: "terminal"` in config. Read only the selected browser reference. If Playwright MCP is unavailable, report the missing prerequisite and ask the user to configure it or request terminal-browser; do not fall back automatically. A binary's presence does not prove its browser is usable. Report missing dependencies; do not install software, edit agent settings, or switch browsers midway through an application without user direction.
 
 ## Queue and recovery
 

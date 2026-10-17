@@ -56,6 +56,22 @@ class HelperTests(unittest.TestCase):
         self.run_cli("validate", ok=False)
         self.assertIn("Built tools", self.resume.read_text())
 
+    def test_browser_selection(self):
+        self.assertEqual(self.cfg["browser"], "playwright")
+        self.cfg.pop("browser")
+        self.save_config()
+        self.assertEqual(json.loads(self.run_cli("validate"))["browser"], "playwright")
+        for browser in ("playwright", "terminal", "auto"):
+            with self.subTest(browser=browser):
+                self.cfg["browser"] = browser
+                self.save_config()
+                self.assertEqual(json.loads(self.run_cli("validate"))["browser"], browser)
+        for browser in ("vessel", "unknown"):
+            with self.subTest(browser=browser):
+                self.cfg["browser"] = browser
+                self.save_config()
+                self.assertIn("browser must be", self.run_cli("validate", ok=False))
+
     def test_invalid_config_and_answers(self):
         self.config.write_text("{broken")
         self.run_cli("validate", ok=False)
@@ -158,7 +174,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(note.read_text(), "preserve")
         self.assertEqual(json.loads(self.run_cli("history"))["jobs"][0]["id"], identity)
         self.assertTrue((self.home / ".claude/skills/job-apply/SKILL.md").is_file())
-        self.assertTrue((dest / "references/vessel.md").is_file())
+        self.assertTrue((dest / "references/playwright-mcp.md").is_file())
         self.assertTrue((dest / "scripts/job_apply.py").is_file())
         self.assertTrue(os.access(dest / "scripts/run-helper.sh", os.X_OK))
         # A retired external seed must not break reinstall of existing user config.
