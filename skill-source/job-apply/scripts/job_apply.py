@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Configuration, application bookkeeping, and read-only verification email via gog."""
+"""Job application bookkeeping, shared passwords via pass, and read-only email via gog."""
 
 import argparse
 import contextlib
@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 STATUSES = {"pending", "in_progress", "awaiting_review", "blocked", "submitting",
             "submitted", "uncertain", "skipped"}
 METADATA = {"employer", "role", "application_url", "blocker", "evidence", "note", "aliases"}
+ACCOUNT_STAGES = {"signup_started", "verification_pending", "ready"}
+PASSWORD_SOURCES = {"unknown", "shared_pass", "external"}
 
 
 def fail(message):
@@ -83,7 +85,8 @@ def resolve_path(value, base):
 def validate_config(cfg, path, require_resume=True):
     if not isinstance(cfg, dict) or type(cfg.get("version")) is not int or cfg["version"] != 1:
         fail("Configuration must be an object with version 1")
-    allowed = {"version", "resume_path", "browser", "submission_mode", "history_path", "profile", "answers"}
+    allowed = {"version", "resume_path", "browser", "submission_mode", "history_path", "profile", "answers",
+               "password_pass_entry", "accounts_path"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
     if cfg.get("browser", "playwright") not in {"auto", "playwright", "terminal"}:
@@ -110,6 +113,16 @@ def validate_config(cfg, path, require_resume=True):
         protected.add(resolve_path(resume, path.parent).resolve())
     if history_path in protected:
         fail("history_path must differ from the config and resume paths")
+    entry = cfg.get("password_pass_entry", "job-apply/shared-password")
+    if (not isinstance(entry, str) or not entry or entry.startswith(("/", "-")) or
+            any(part in {"", ".", ".."} for part in entry.split("/")) or
+            any(ord(c) < 32 or ord(c) == 127 for c in entry)):
+        fail("password_pass_entry must be a relative pass entry without traversal or control characters")
+    accounts = cfg.get("accounts_path", "~/.local/state/job-apply/accounts.json")
+    if not isinstance(accounts, str) or not accounts.strip():
+        fail("accounts_path must be a nonempty string")
+    if resolve_path(accounts, path.parent).resolve() in protected | {history_path}:
+        fail("accounts_path must differ from the config, resume, and history paths")
     profile = cfg.get("profile", {})
     if not isinstance(profile, dict):
         fail("profile must be an object")
@@ -286,6 +299,86 @@ def recover(args):
     output(result)
 
 
+def password_get(args):
+    """Read just the configured entry; never persist it or echo pass diagnostics."""
+    _, cfg = load_config(args)
+    if not shutil.which("pass"):
+        fail("Shared password requires pass; see references/accounts.md")
+    try:
+        result = subprocess.run(["pass", "show", cfg.get("password_pass_entry", "job-apply/shared-password")],
+                                capture_output=True, text=True, timeout=45)
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        fail("Unable to read shared password from pass; check the entry and GPG unlock. No fallback attempted.")
+    if result.returncode:
+        fail("Unable to read shared password from pass; check the entry and GPG unlock. No fallback attempted.")
+    password = result.stdout.split("\n", 1)[0].removesuffix("\r")
+    if not password.strip() or any(ord(c) < 32 or ord(c) == 127 for c in password):
+        fail("The pass entry must have a nonempty password on its first line without control characters")
+    print(password)
+
+
+def account_identity(origin, tenant, email):
+    parts = urlsplit(normalize(origin))
+    if parts.scheme != "https" or parts.path != "/" or parts.query or parts.fragment:
+        fail("Account origin must be an HTTPS origin without a path, query, or fragment")
+    if "#" in origin:
+        fail("Account origin must not contain a fragment")
+    for name, value in (("tenant", tenant), ("email", email)):
+        if (not isinstance(value, str) or not value.strip() or value != value.strip() or
+                len(value) > 254 or any(ord(c) < 32 or ord(c) == 127 for c in value)):
+            fail("Account " + name + " must be a nonempty string of at most 254 characters without control characters")
+    if "@" not in email or any(c.isspace() for c in email):
+        fail("Account email must be a candidate email address")
+    return (urlunsplit((parts.scheme, parts.netloc.removesuffix(":443"), "", "", "")),
+            tenant, email)
+
+
+def account_key(record):
+    return record["origin"], record["tenant"], record["email"].casefold()
+
+
+def validate_accounts(data):
+    if (not isinstance(data, dict) or set(data) != {"version", "accounts"} or
+            type(data["version"]) is not int or data["version"] != 1 or not isinstance(data["accounts"], list)):
+        fail("Invalid account registry; refusing to overwrite")
+    seen = set()
+    for record in data["accounts"]:
+        if not isinstance(record, dict) or set(record) != {
+                "origin", "tenant", "email", "stage", "password_source", "updated_at"}:
+            fail("Invalid account record; only non-secret account metadata is supported")
+        identity = account_identity(record["origin"], record["tenant"], record["email"])
+        if (identity != (record["origin"], record["tenant"], record["email"]) or
+                record["stage"] not in ACCOUNT_STAGES or record["password_source"] not in PASSWORD_SOURCES or
+                not isinstance(record["updated_at"], str)):
+            fail("Invalid account record")
+        key = account_key(record)
+        if key in seen:
+            fail("Duplicate account identity; inspect registry before continuing")
+        seen.add(key)
+    return data
+
+
+def account(args):
+    path, cfg = load_config(args)
+    origin, tenant, email_address = account_identity(args.origin, args.tenant, args.email)
+    key = (origin, tenant, email_address.casefold())
+    target = resolve_path(cfg.get("accounts_path", "~/.local/state/job-apply/accounts.json"), path.parent)
+    with locked(target):
+        data = validate_accounts(read_json(target)) if target.exists() else {"version": 1, "accounts": []}
+        record = next((r for r in data["accounts"] if account_key(r) == key), None)
+        if args.command == "account-record":
+            if record is None:
+                record = {"origin": origin, "tenant": tenant, "email": email_address,
+                          "password_source": "unknown"}
+                data["accounts"].append(record)
+            record.update(stage=args.stage, updated_at=now())
+            if args.password_source:
+                record["password_source"] = args.password_source
+            validate_accounts(data)
+            atomic_json(target, data)
+        output({"account": record})
+
+
 def email(args):
     """Expose only two reads; never accept gog flags or a different account."""
     if not shutil.which("gog"):
@@ -365,6 +458,15 @@ def main():
     subs.add_parser("validate")
     subs.add_parser("resume-text")
     subs.add_parser("history")
+    subs.add_parser("password-get", help="Print the shared password's first line from the configured pass entry (secret output)")
+    for name in ("account-lookup", "account-record"):
+        sub = subs.add_parser(name, help="Look up or record non-secret portal account progress")
+        sub.add_argument("--origin", required=True, help="HTTPS portal origin only")
+        sub.add_argument("--tenant", required=True, help="Observed employer tenant/site identifier, not a job URL")
+        sub.add_argument("--email", required=True)
+        if name == "account-record":
+            sub.add_argument("--stage", required=True, choices=sorted(ACCOUNT_STAGES))
+            sub.add_argument("--password-source", choices=sorted(PASSWORD_SOURCES))
     sub = subs.add_parser("email-search", help="Search verification email through the job-apply gog alias (read-only)")
     sub.add_argument("query", help="Narrow Gmail query for the current application")
     sub = subs.add_parser("email-get", help="Read one Gmail message through the job-apply gog alias (read-only)")
@@ -386,6 +488,10 @@ def main():
             globals()[args.command](args)
         elif args.command in {"email-search", "email-get"}:
             email(args)
+        elif args.command == "password-get":
+            password_get(args)
+        elif args.command in {"account-lookup", "account-record"}:
+            account(args)
         elif args.command == "history":
             with history(args, write=False) as data:
                 output(data)

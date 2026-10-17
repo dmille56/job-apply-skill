@@ -76,6 +76,8 @@ Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8
   "browser": "playwright",
   "submission_mode": "review",
   "history_path": "~/.local/state/job-apply/history.json",
+  "password_pass_entry": "job-apply/shared-password",
+  "accounts_path": "~/.local/state/job-apply/accounts.json",
   "profile": {
     "full_name": "Your Name",
     "email": "you@example.com",
@@ -120,6 +122,16 @@ Optional **resume-qna**: install it through your agent's normal skills mechanism
 
 ## Usage and recovery
 
+For account creation and login, install and initialize `pass` with your GPG key, then store the shared password interactively:
+
+```sh
+pass insert job-apply/shared-password
+```
+
+The skill retrieves the first line of this entry only when needed. Set `password_pass_entry` to use another entry; never put the password in job-apply configuration or Nix expressions. `pass` and GPG setup/unlocking remain user-managed prerequisites, including for Nix installations. A missing entry or failed unlock pauses the application. The helper never modifies the password store. Reusing one password increases the impact of a compromised employer account; changing the entry does not update existing employer accounts.
+
+Explicitly authorize required account creation for a batch, for example: “Apply to these URLs and create required candidate accounts using my shared password in pass.” This includes standard required signup terms and privacy acknowledgments; application submission still follows review/auto mode. The skill uses a private non-secret account registry at `accounts_path` to distinguish candidate emails and employer tenants, track verification progress, and recover interrupted signup. It reuses known accounts and pauses for unknown existing credentials, password rejection, CAPTCHA, unsupported MFA, or additional commitments. See [account setup and workflow](skill-source/job-apply/references/accounts.md). Password retrieval and browser entry may expose the value in tool transcripts; it is never written to application history or reports.
+
 Optional verification email uses [gogcli](https://github.com/openclaw/gogcli). Install `gog` separately, configure its OAuth credentials, then authorize the candidate's Gmail mailbox and create the required account alias:
 
 ```sh
@@ -142,7 +154,7 @@ https://example.com/jobs/456
 Resume the interrupted job-apply batch.
 ```
 
-Applications stop for missing facts, login/CAPTCHA, required agreements, or ambiguous submission outcomes. A batch advances after confirmed submission or explicit skip. Confirmed submissions are skipped unless you explicitly request reapplication. Sequential history is local to this configuration and is not a shared account-wide duplicate detector. Run one application workflow against a history file at a time.
+Applications stop for missing facts, unresolved login/CAPTCHA, agreements outside existing authorization, or ambiguous submission outcomes. A batch advances after confirmed submission or explicit skip. Confirmed submissions are skipped unless you explicitly request reapplication. Sequential history is local to this configuration and is not a shared account-wide duplicate detector. Run one application workflow against a history file at a time.
 
 History records URLs, status, short operational metadata, and confirmation evidence. It does not store form answers or credentials. Helpers use private file permissions and atomic writes. If submission was interrupted, the agent inspects the site before retrying; `recover --id ID` only marks the uncertain outcome and does not check the employer's site.
 
@@ -156,6 +168,8 @@ nix fmt
 ```
 
 The helper suite uses temporary directories and no network. Open `tests/mock-application.html` in the selected browser to exercise upload, conditional required fields, a 300-character answer, confirmation, a simulated login blocker, and an ambiguous result. Use fictional information and a test resume. Exercise both review and auto modes, pause on missing sponsorship data, and repeat with resume-qna absent/matching/mismatched. This fixture never sends an application. Browser and agent integrations require a working interactive host; helper tests alone do not validate those integrations.
+
+Use `tests/mock-account-flow.html` to exercise new signup, existing-account detection/login, password rejection, and recovery after interrupted signup. It uses only fictional in-memory credentials and a visible mock verification code, and links back to the application fixture with the job identity. Account verification must never be recorded as an application submission. For an interruption immediately after creation, call `interruptSignup()` in the fixture and recover through sign-in without repeating signup.
 
 For module evaluation against local nixpkgs and Home Manager checkouts:
 

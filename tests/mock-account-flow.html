@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Local candidate account fixture</title>
+<style>body{font:18px system-ui;max-width:44rem;margin:3rem auto}label{display:block;margin:1rem 0}input,select,button{font:inherit}</style>
+<h1>Example Company: Software Engineer — MOCK-JOB-42</h1>
+<p>Local fixture only. Use fictional credentials. No data is sent or persisted.</p>
+<label>Scenario <select id="scenario">
+  <option value="signup">New account</option>
+  <option value="existing">Existing account</option>
+  <option value="rejected">Password rejected</option>
+  <option value="interrupted">Interrupted signup</option>
+</select></label>
+<button id="reset" type="button">Reset scenario</button>
+<form id="auth">
+  <h2 id="heading">Create candidate account</h2>
+  <label>Email <input name="email" type="email" required></label>
+  <label>Password <input name="password" type="password" required></label>
+  <label id="terms-label"><input name="terms" type="checkbox" required> Accept candidate account terms and privacy acknowledgment</label>
+  <button id="signup">Create account</button>
+  <button id="login" type="button">Sign in</button>
+</form>
+<form id="verification" hidden>
+  <p>Verification requested for this candidate. Fictional email code: 123456.</p>
+  <label>Verification code <input name="code" required></label>
+  <button>Verify account</button>
+</form>
+<section id="portal" hidden>
+  <h2>Candidate account ready</h2>
+  <p id="candidate"></p>
+  <a href="mock-application.html?job=MOCK-JOB-42">Continue application for Software Engineer — MOCK-JOB-42</a>
+  <p>No application has been submitted.</p>
+</section>
+<p id="result" role="status"></p>
+<script>
+const auth = document.querySelector('#auth');
+const verification = document.querySelector('#verification');
+const portal = document.querySelector('#portal');
+const result = document.querySelector('#result');
+const scenario = document.querySelector('#scenario');
+let account = null;
+let signupAttempts = 0;
+function reset() {
+  auth.reset(); verification.reset();
+  auth.hidden = false; verification.hidden = true; portal.hidden = true;
+  result.textContent = ''; signupAttempts = 0;
+  account = ['existing', 'interrupted'].includes(scenario.value)
+    ? { email: 'candidate@example.com', password: 'fixture-password', verified: scenario.value === 'existing' }
+    : null;
+}
+document.querySelector('#reset').addEventListener('click', reset);
+scenario.addEventListener('change', reset);
+function ready() {
+  auth.hidden = true; verification.hidden = true; portal.hidden = false;
+  document.querySelector('#candidate').textContent = account.email;
+  result.textContent = 'Account usable. Return to the original job.';
+}
+function verify() {
+  auth.hidden = true; verification.hidden = false;
+  result.textContent = 'Account exists; verification pending.';
+}
+auth.addEventListener('submit', event => {
+  event.preventDefault(); signupAttempts++;
+  if (scenario.value === 'rejected') {
+    result.textContent = 'Password does not meet portal requirements.'; return;
+  }
+  if (account) {
+    result.textContent = 'Account already exists. Sign in to continue.'; return;
+  }
+  account = { email: auth.elements.email.value, password: auth.elements.password.value, verified: false };
+  verify();
+});
+document.querySelector('#login').addEventListener('click', () => {
+  if (!account || account.email !== auth.elements.email.value || account.password !== auth.elements.password.value) {
+    result.textContent = 'Sign-in failed.'; return;
+  }
+  account.verified ? ready() : verify();
+});
+verification.addEventListener('submit', event => {
+  event.preventDefault();
+  if (verification.elements.code.value !== '123456') {
+    result.textContent = 'Invalid verification code.'; return;
+  }
+  account.verified = true; ready();
+});
+// Simulate a browser/session interruption after account creation, without repeating signup.
+window.interruptSignup = () => {
+  auth.hidden = false; verification.hidden = true; portal.hidden = true;
+  result.textContent = 'Outcome unavailable. Inspect account before retrying signup.';
+};
+window.fixtureState = () => ({ signupAttempts, verified: account?.verified ?? false, applicationSubmitted: false });
+reset();
+</script>
+</html>

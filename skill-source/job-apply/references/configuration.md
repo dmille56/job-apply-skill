@@ -6,6 +6,9 @@
 job-apply init
 job-apply --config /path/to/config.json validate
 job-apply resume-text
+job-apply password-get  # Secret output; only when needed for the current account gate
+job-apply account-lookup --origin https://careers.example.com --tenant employer-careers --email you@example.com
+job-apply account-record --origin https://careers.example.com --tenant employer-careers --email you@example.com --stage ready --password-source shared_pass
 job-apply email-search 'to:you@gmail.com from:accounts.example.com newer_than:1d subject:verification'
 job-apply email-get 18abcdef01234567
 job-apply queue 'https://example.com/jobs/123' 'https://example.com/jobs/456'
@@ -20,6 +23,8 @@ job-apply recover --id JOB_ID
 
 Commands output JSON except `resume-text`, which outputs extracted text. Errors go to stderr and return nonzero. `init` creates an example only when no configuration exists; edit it before validation. It does not create a resume.
 
+`password-get` is also plain text: it outputs only the configured pass entry's first line, a secret. It requires no readable resume and performs no password-store writes. Failure diagnostics omit pass output. See [accounts.md](accounts.md) for setup and account authorization.
+
 ## Settings
 
 `email-search` and `email-get` require separately configured gogcli with the fixed `job-apply` account alias. They enforce read-only/no-send access and do not need or change JSON configuration. Read [email.md](email.md) for user setup, verification matching, and email restrictions.
@@ -31,10 +36,14 @@ Copy `config.example.json` and replace the null resume path. The default history
 - `browser`: `playwright` (default, Playwright MCP), `terminal` (explicit terminal-browser selection), or legacy `auto` (also Playwright MCP). Missing Playwright MCP does not trigger automatic fallback. For existing configs, replace `vessel` with `playwright`; Vessel is no longer supported.
 - `submission_mode`: `review` or `auto`.
 - `history_path`: path to the writable JSON history.
+- `password_pass_entry`: relative `pass` entry name, default `job-apply/shared-password`; never the password itself. Absolute paths, traversal, leading option prefixes, and control characters are rejected. Retrieval uses the user's existing pass/GPG environment.
+- `accounts_path`: private non-secret account registry, default `~/.local/state/job-apply/accounts.json`. Relative paths resolve against the config file. It must differ from config, resume, and history paths. New directories use `0700`; writes use atomic replacement with mode `0600` and a file lock. Use a private parent directory.
 - `profile`: candidate facts keyed by descriptive field names. `null` means unknown. Country-specific authorization questions should include country context.
 - `answers`: list of `{ "questions": ["Question", "Equivalent wording"], "answer": "Candidate answer", "employer": "Optional scope", "role": "Optional scope" }`. Omit scopes for general answers. The agent matches meaning; the helper validates structure, not semantic suitability.
 
 Do not put secrets or private answers in a flake or Nix seed expression. Edit the mutable JSON or use a module's external `configSeedFile` option. Resume module options are strings naming existing files, not Nix path literals that copy resumes to the store.
+
+`account-lookup` returns `{ "account": null }` when absent, otherwise the matching non-secret record. `account-record` upserts by HTTPS origin, tenant, and case-insensitive email. Origins exclude paths, queries, and fragments; default HTTPS port 443 is normalized away. Tenant names remain case-sensitive. Required `--stage` is `signup_started`, `verification_pending`, or `ready`. Optional `--password-source` is `unknown`, `shared_pass`, or `external`; omission preserves the prior source. Records include `updated_at` and no free-form metadata. Stages describe observed account progress, not an enforced transition or application submission state. Registry corruption fails without overwriting it. One browser workflow must own the batch, as with history.
 
 ## History interface
 

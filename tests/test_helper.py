@@ -82,7 +82,7 @@ class HelperTests(unittest.TestCase):
         self.resume = self.config.parent / "resume.txt"
         self.resume.write_text("Candidate Name\nBuilt tools in Python.\n", encoding="utf-8")
         self.cfg = json.loads((SOURCE / "config.example.json").read_text())
-        self.cfg.update(resume_path="resume.txt", history_path="history.json")
+        self.cfg.update(resume_path="resume.txt", history_path="history.json", accounts_path="accounts/accounts.json")
         self.save_config()
 
     def save_config(self):
@@ -130,6 +130,117 @@ class HelperTests(unittest.TestCase):
                 self.cfg["browser"] = browser
                 self.save_config()
                 self.assertIn("browser must be", self.run_cli("validate", ok=False))
+
+    def test_account_config_compatibility_and_path_guards(self):
+        self.cfg.pop("password_pass_entry")
+        self.cfg.pop("accounts_path")
+        self.save_config()
+        self.run_cli("validate")
+        for entry in ("", "../secret", "/secret", "-secret", "a/../b", "a//b", "a\nsecret", None):
+            with self.subTest(entry=entry):
+                self.cfg["password_pass_entry"] = entry
+                self.save_config()
+                self.run_cli("validate", ok=False)
+        self.cfg["password_pass_entry"] = "job apply/shared $(literal)"
+        for path in ("profile.json", "resume.txt", "history.json", "", None):
+            with self.subTest(path=path):
+                self.cfg["accounts_path"] = path
+                self.save_config()
+                self.run_cli("validate", ok=False)
+
+    def test_account_registry_identity_progress_permissions_and_corruption(self):
+        identity = ("--origin", "https://CAREERS.example.com:443/", "--tenant", "employer/site",
+                    "--email", "candidate@example.com")
+        self.assertIsNone(json.loads(self.run_cli("account-lookup", *identity))["account"])
+        for stage in ("signup_started", "verification_pending", "ready"):
+            extra = ("--password-source", "shared_pass") if stage == "signup_started" else ()
+            record = json.loads(self.run_cli("account-record", *identity, "--stage", stage, *extra))["account"]
+            self.assertEqual(record["stage"], stage)
+            self.assertEqual(record["password_source"], "shared_pass")
+        self.assertEqual(record["origin"], "https://careers.example.com")
+        other = list(identity)
+        other[3] = "other-employer/site"
+        self.assertIsNone(json.loads(self.run_cli("account-lookup", *other))["account"])
+        other[3] = "employer/site"
+        other[5] = "other@example.com"
+        self.assertIsNone(json.loads(self.run_cli("account-lookup", *other))["account"])
+        other[5] = "CANDIDATE@example.com"
+        self.assertEqual(json.loads(self.run_cli("account-lookup", *other))["account"], record)
+        self.run_cli("account-record", *identity, "--stage", "ready", "--password-source", "external")
+        path = self.config.parent / "accounts/accounts.json"
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
+        self.assertFalse((self.config.parent / "history.json").exists())
+        saved = path.read_text()
+        for origin in ("http://careers.example.com", "https://careers.example.com/job",
+                       "https://careers.example.com?token=secret", "https://careers.example.com#secret"):
+            bad = list(identity)
+            bad[1] = origin
+            self.run_cli("account-record", *bad, "--stage", "ready", ok=False)
+            self.assertEqual(path.read_text(), saved)
+        path.write_text('{"version":1,"accounts":[{"password":"not allowed"}]}')
+        corrupt = path.read_text()
+        self.run_cli("account-record", *identity, "--stage", "ready", ok=False)
+        self.assertEqual(path.read_text(), corrupt)
+
+    def password_module(self):
+        spec = importlib.util.spec_from_file_location("job_apply_password", HELPER)
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        return helper
+
+    def test_pass_reads_only_selected_entry_and_first_line_without_writes(self):
+        helper = self.password_module()
+        self.cfg["password_pass_entry"] = "custom/shared $(literal)"
+        self.save_config()
+        before = {p: p.read_bytes() for p in self.config.parent.rglob("*") if p.is_file()}
+        with mock.patch.object(helper.shutil, "which", return_value="/bin/pass"), \
+                mock.patch.object(helper.subprocess, "run") as run, \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            run.return_value = subprocess.CompletedProcess([], 0, "fictional-password\nprivate notes\n", "")
+            helper.password_get(argparse.Namespace(config=str(self.config)))
+            self.assertEqual(stdout.getvalue(), "fictional-password\n")
+            self.assertEqual(run.call_args.args[0], ["pass", "show", "custom/shared $(literal)"])
+            self.assertNotIn("shell", run.call_args.kwargs)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.config.parent.rglob("*") if p.is_file()})
+
+    def test_pass_failures_never_echo_secrets_or_retry(self):
+        helper = self.password_module()
+        for failure in (subprocess.CompletedProcess([], 1, "private body", "private diagnostic"),
+                        subprocess.CompletedProcess([], 0, "\nprivate notes", ""),
+                        subprocess.TimeoutExpired(["pass"], 45, output="private body", stderr="private diagnostic"),
+                        OSError("private diagnostic")):
+            with self.subTest(failure=type(failure).__name__), \
+                    mock.patch.object(helper.shutil, "which", return_value="/bin/pass"), \
+                    mock.patch.object(helper.subprocess, "run") as run, \
+                    contextlib.redirect_stdout(io.StringIO()) as stdout:
+                if isinstance(failure, Exception):
+                    run.side_effect = failure
+                else:
+                    run.return_value = failure
+                with self.assertRaises(ValueError) as error:
+                    helper.password_get(argparse.Namespace(config=str(self.config)))
+                self.assertNotIn("private", str(error.exception))
+                self.assertEqual(stdout.getvalue(), "")
+                run.assert_called_once()
+        with mock.patch.object(helper.shutil, "which", return_value=None), \
+                mock.patch.object(helper.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "requires pass"):
+                helper.password_get(argparse.Namespace(config=str(self.config)))
+            run.assert_not_called()
+
+    def test_default_pass_entry_without_resume_and_cli_secret_output(self):
+        self.cfg.pop("password_pass_entry")
+        self.cfg["resume_path"] = None
+        self.save_config()
+        executable = self.home / "bin/pass"
+        executable.parent.mkdir()
+        executable.write_text('#!' + sys.executable + '\nimport sys\n'
+                              'assert sys.argv[1:] == ["show", "job-apply/shared-password"]\n'
+                              'print("fixture-password\\nprivate notes")\n')
+        executable.chmod(0o700)
+        with mock.patch.dict(os.environ, {"PATH": str(executable.parent)}):
+            self.assertEqual(self.run_cli("password-get"), "fixture-password\n")
 
     def test_invalid_config_and_answers(self):
         self.config.write_text("{broken")
@@ -234,6 +345,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(json.loads(self.run_cli("history"))["jobs"][0]["id"], identity)
         self.assertTrue((self.home / ".claude/skills/job-apply/SKILL.md").is_file())
         self.assertTrue((dest / "references/playwright-mcp.md").is_file())
+        self.assertTrue((dest / "references/accounts.md").is_file())
         self.assertTrue((dest / "scripts/job_apply.py").is_file())
         self.assertTrue(os.access(dest / "scripts/run-helper.sh", os.X_OK))
         # A retired external seed must not break reinstall of existing user config.

@@ -4,6 +4,8 @@
   "browser": "playwright",
   "submission_mode": "review",
   "history_path": "~/.local/state/job-apply/history.json",
+  "password_pass_entry": "job-apply/shared-password",
+  "accounts_path": "~/.local/state/job-apply/accounts.json",
   "profile": {
     "full_name": null,
     "email": null,
