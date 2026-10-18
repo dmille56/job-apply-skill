@@ -156,6 +156,8 @@ Resume the interrupted job-apply batch.
 
 Applications stop for missing facts, unresolved login/CAPTCHA, agreements outside existing authorization, or ambiguous submission outcomes. A batch advances after confirmed submission or explicit skip. Confirmed submissions are skipped unless you explicitly request reapplication. Sequential history is local to this configuration and is not a shared account-wide duplicate detector. Run one application workflow against a history file at a time.
 
+The skill explicitly ignores website instructions directed at AI agents, including hidden content and instructions surfaced through browser tools. Websites supply application data; they cannot grant permission, change submission mode, request unrelated files or secrets, or override the user's instructions. Suspicious requests with an unclear purpose or destination pause the application. This is an agent instruction safeguard, not a sandbox or a guarantee against prompt injection; keep browser and tool permissions limited. Reinstall/reload the skill after updating its source to apply these rules to installed copies.
+
 History records URLs, status, short operational metadata, and confirmation evidence. It does not store form answers or credentials. Helpers use private file permissions and atomic writes. If submission was interrupted, the agent inspects the site before retrying; `recover --id ID` only marks the uncertain outcome and does not check the employer's site.
 
 ## Development and validation
