@@ -320,6 +320,59 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(reapplied["previous_attempts"][0]["evidence"], "Application received: ABC123")
         self.assertNotIn("evidence", reapplied)
 
+    def test_submission_csv_and_reapplications(self):
+        import csv
+        identity = self.queue()[0]["id"]
+        self.cfg["csv_path"] = "reports/applications.csv"
+        self.save_config()
+        target = self.config.parent / self.cfg["csv_path"]
+        self.update(identity, "in_progress", employer='Example, "Inc"', role="Engineer",
+                    location="Los Angeles", type="Full-time", mode="Hybrid", pay="$100,000/year")
+        self.update(identity, "submitting")
+        self.assertFalse(target.exists())
+        submitted = self.update(identity, "submitted", evidence="Receipt ABC123")
+        with target.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.reader(stream))
+        self.assertEqual(rows[0], ["Company", "Position", "Link", "Name of Contact", "Email/Phone",
+                                   "Location", "Type", "Mode", "Pay", "Sent", "Date (applied)"])
+        self.assertEqual(rows[1], ['Example, "Inc"', "Engineer", "https://example.com/jobs?id=1",
+                                   "", "", "Los Angeles", "Full-time", "Hybrid", "$100,000/year",
+                                   "Yes", submitted["submitted_at"][:10]])
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        original = target.read_bytes()
+        self.run_cli("export-csv")
+        self.assertEqual(target.read_bytes(), original)
+        self.run_cli("update", "--id", identity, "--status", "pending", "--reapply")
+        self.run_cli("export-csv")
+        self.assertEqual(target.read_bytes(), original)
+        self.update(identity, "in_progress")
+        self.update(identity, "submitting")
+        self.update(identity, "submitted", evidence="Receipt DEF456")
+        with target.open(newline="", encoding="utf-8") as stream:
+            self.assertEqual(len(list(csv.reader(stream))), 3)
+
+    def test_csv_failure_preserves_submission_and_can_be_retried(self):
+        identity = self.queue()[0]["id"]
+        self.cfg["csv_path"] = "report-dir"
+        self.save_config()
+        target = self.config.parent / "report-dir"
+        target.mkdir()
+        self.update(identity, "in_progress")
+        self.update(identity, "submitting")
+        error = self.run_cli("update", "--id", identity, "--status", "submitted", "--data", "-",
+                             data=json.dumps({"evidence": "Receipt ABC123"}), ok=False)
+        self.assertIn("Submission saved in history", error)
+        self.assertEqual(self.queue()[0]["status"], "submitted")
+        self.cfg["csv_path"] = "recovered.csv"
+        self.save_config()
+        self.run_cli("export-csv")
+        self.assertIn("Yes,", (self.config.parent / "recovered.csv").read_text())
+        for path in ("profile.json", "resume.txt", "history.json", "accounts/accounts.json", "", None):
+            with self.subTest(path=path):
+                self.cfg["csv_path"] = path
+                self.save_config()
+                self.run_cli("validate", ok=False)
+
     def test_concurrent_writes_and_corrupt_history(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
             list(pool.map(lambda n: self.queue("https://example.com/jobs/" + str(n)), range(12)))

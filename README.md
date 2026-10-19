@@ -100,7 +100,10 @@ Use your own facts. `null` means unknown. Answers may optionally specify `employ
 job-apply validate
 job-apply resume-text
 job-apply history
+job-apply export-csv
 ```
+
+Confirmed submissions automatically generate `applications.csv` beside the JSON history (by default `~/.local/state/job-apply/applications.csv`). Set `csv_path` in configuration to choose another location. Columns are Company, Position, Link, Name of Contact, Email/Phone, Location, Type, Mode, Pay, Sent, and Date (applied). Unknown details stay blank, Sent is `Yes`, and dates use `YYYY-MM-DD`. Run `job-apply export-csv` to backfill existing submitted history or retry a failed export. This generated report is replaced from history on export, so keep manual spreadsheet edits in a separate copy. Confirmed reapplications retain a row for each attempt.
 
 ## Agent and browser setup
 

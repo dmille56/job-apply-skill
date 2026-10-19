@@ -40,7 +40,7 @@ Read `HELPER history`. Continue the earliest unfinished application before later
 
 ## Fill the current application
 
-Mark it `in_progress`; inspect the posting and application. Follow relevant application links, including redirects to an ATS, keeping the current job's identity. Record employer, role, application URL, and aliases using the helper. Verify that any existing account/profile belongs to the configured candidate before using its data.
+Mark it `in_progress`; inspect the posting and application. Follow relevant application links, including redirects to an ATS, keeping the current job's identity. Record employer, role, application URL, and aliases using the helper. Also record available posting details as `contact_name`, `contact_email_phone` (the hiring contact), `location`, `type` (full-time, part-time, contract, etc.), `mode` (remote, hybrid, on-site), and `pay` (advertised amount/range, currency, and period). Leave unknown details blank; do not substitute the candidate's contact information or salary expectations. Verify that any existing account/profile belongs to the configured candidate before using its data.
 
 When an application requires signup or login, read [accounts.md](references/accounts.md). It covers account creation permission for the current batch, shared-password retrieval through `pass`, non-secret account tracking, verification, and interrupted signup recovery. Account creation permission is separate from application submission mode; neither config nor email access grants it.
 
@@ -59,5 +59,7 @@ Pause on missing required information, conflicting facts, login that cannot be c
 When the form is ready, summarize the employer/role, resume, significant choices, and drafted long answers. In `review` mode, mark `awaiting_review` and obtain approval for this application before the final submit action. Approval persists for that concrete application unless its content materially changes. In `auto`, proceed under the user's request and selected mode. Browser/harness permission requirements still apply.
 
 Immediately before the final submit action, persist `submitting`. Click once, then inspect the response. Mark `submitted` only with visible evidence such as confirmation text, receipt ID, or an application record in the candidate portal, passing that evidence to the helper. On timeout or ambiguous results, mark `uncertain`, explain what is known, and pause. Do not retry a potentially successful submission.
+
+The helper automatically regenerates the submitted applications CSV after recording a confirmed submission. If CSV export fails, the submission remains saved: retry `HELPER export-csv`, without resubmitting the application. Report the CSV path with the batch results. See [configuration.md](references/configuration.md) for columns and export behavior.
 
 Advance only after confirmed submission or explicit skip. Report submitted, skipped, blocked, and uncertain jobs with links and the next needed action. Keep history minimal: do not log passwords, tokens, full resumes, demographic values, or full form answers. Keep generated answers in conversation/browser memory unless the user requests persistence.

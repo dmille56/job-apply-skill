@@ -3,6 +3,7 @@
 
 import argparse
 import contextlib
+import csv
 import datetime
 import fcntl
 import hashlib
@@ -19,7 +20,10 @@ from urllib.parse import urlsplit, urlunsplit
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = {"pending", "in_progress", "awaiting_review", "blocked", "submitting",
             "submitted", "uncertain", "skipped"}
-METADATA = {"employer", "role", "application_url", "blocker", "evidence", "note", "aliases"}
+METADATA = {"employer", "role", "application_url", "blocker", "evidence", "note", "aliases",
+            "contact_name", "contact_email_phone", "location", "type", "mode", "pay"}
+CSV_COLUMNS = ["Company", "Position", "Link", "Name of Contact", "Email/Phone",
+               "Location", "Type", "Mode", "Pay", "Sent", "Date (applied)"]
 ACCOUNT_STAGES = {"signup_started", "verification_pending", "ready"}
 PASSWORD_SOURCES = {"unknown", "shared_pass", "external"}
 
@@ -86,7 +90,7 @@ def validate_config(cfg, path, require_resume=True):
     if not isinstance(cfg, dict) or type(cfg.get("version")) is not int or cfg["version"] != 1:
         fail("Configuration must be an object with version 1")
     allowed = {"version", "resume_path", "resume_json", "browser", "submission_mode", "history_path", "profile", "answers",
-               "password_pass_entry", "accounts_path"}
+               "password_pass_entry", "accounts_path", "csv_path"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
     if cfg.get("browser", "playwright") not in {"auto", "playwright", "terminal"}:
@@ -141,6 +145,12 @@ def validate_config(cfg, path, require_resume=True):
         fail("accounts_path must be a nonempty string")
     if resolve_path(accounts, path.parent).resolve() in protected | {history_path}:
         fail("accounts_path must differ from the config, resume, and history paths")
+    csv_value = cfg.get("csv_path", str(history_path.with_name("applications.csv")))
+    if not isinstance(csv_value, str) or not csv_value.strip():
+        fail("csv_path must be a nonempty string")
+    if resolve_path(csv_value, path.parent).resolve() in protected | {
+            history_path, resolve_path(accounts, path.parent).resolve()}:
+        fail("csv_path must differ from the config, resume, history, and accounts paths")
     profile = cfg.get("profile", {})
     if not isinstance(profile, dict):
         fail("profile must be an object")
@@ -207,6 +217,47 @@ def history(args, write=True):
         if write:
             validate_history(data)
             atomic_json(target, data)
+
+
+def csv_path(cfg, base):
+    default = resolve_path(cfg.get("history_path", "~/.local/state/job-apply/history.json"), base).with_name("applications.csv")
+    return resolve_path(cfg.get("csv_path", str(default)), base)
+
+
+def write_csv(target, data):
+    """Rebuild the generated report from confirmed attempts; replace it atomically."""
+    target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temp = tempfile.mkstemp(prefix=".job-apply-", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(CSV_COLUMNS)
+            for job in data["jobs"]:
+                for attempt in [*job.get("previous_attempts", []), job]:
+                    if attempt["status"] != "submitted":
+                        continue
+                    stamp = attempt.get("submitted_at", attempt["updated_at"])
+                    date = datetime.datetime.fromisoformat(stamp).date().isoformat()
+                    writer.writerow([attempt.get(key, "") for key in (
+                        "employer", "role", "url", "contact_name", "contact_email_phone",
+                        "location", "type", "mode", "pay")] + ["Yes", date])
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, target)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+
+def export_csv(args, report=True):
+    path, cfg = load_config(args)
+    target = csv_path(cfg, path.parent)
+    # Use the history lock for both automatic and explicit exports, so an older
+    # snapshot cannot overwrite a newer report.
+    with history(args, write=False) as data:
+        write_csv(target, data)
+    if report:
+        output({"csv_path": str(target)})
 
 
 def init(args):
@@ -279,7 +330,7 @@ def update(args):
             job.setdefault("previous_attempts", []).append({k: v for k, v in job.items()
                                                           if k != "previous_attempts"})
             job["attempt"] += 1
-            for key in ("evidence", "blocker", "note"):
+            for key in ("evidence", "blocker", "note", "submitted_at"):
                 job.pop(key, None)
         elif old == "submitted":
             fail("Submitted records are immutable; use --reapply for an explicitly requested reapplication")
@@ -301,9 +352,17 @@ def update(args):
                 fail("Alias belongs to job " + other["id"] + "; inspect duplicate before applying")
         job.update(meta)
         job.update(status=new, aliases=aliases, updated_at=now())
+        if new == "submitted":
+            job["submitted_at"] = job["updated_at"]
         if new != "blocked":
             job.pop("blocker", None)
         result = dict(job)
+    if new == "submitted":
+        try:
+            export_csv(args, report=False)
+        except (ValueError, OSError, KeyError, TypeError) as error:
+            fail("Submission saved in history, but CSV export failed: " + str(error) +
+                 "; run export-csv to retry the report without resubmitting the application")
     output(result)
 
 
@@ -476,6 +535,7 @@ def main():
     subs.add_parser("validate")
     subs.add_parser("resume-text")
     subs.add_parser("history")
+    subs.add_parser("export-csv", help="Rebuild the submitted applications CSV from history")
     subs.add_parser("password-get", help="Print the shared password's first line from the configured pass entry (secret output)")
     for name in ("account-lookup", "account-record"):
         sub = subs.add_parser(name, help="Look up or record non-secret portal account progress")
@@ -508,6 +568,8 @@ def main():
             email(args)
         elif args.command == "password-get":
             password_get(args)
+        elif args.command == "export-csv":
+            export_csv(args)
         elif args.command in {"account-lookup", "account-record"}:
             account(args)
         elif args.command == "history":
@@ -521,6 +583,7 @@ def main():
                         "resume_json_path": str(resolve_path(cfg["resume_json"], path.parent)) if cfg.get("resume_json") else None,
                         "history_path": str(resolve_path(cfg.get("history_path",
                         "~/.local/state/job-apply/history.json"), path.parent)),
+                        "csv_path": str(csv_path(cfg, path.parent)),
                         "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review")})
             elif resume.suffix.lower() == ".pdf":
                 if not shutil.which("pdftotext"):

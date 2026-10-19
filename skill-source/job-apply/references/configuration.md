@@ -14,6 +14,7 @@ job-apply email-get 18abcdef01234567
 job-apply queue 'https://example.com/jobs/123' 'https://example.com/jobs/456'
 job-apply queue --input /path/to/jobs.txt
 job-apply history
+job-apply export-csv
 job-apply update --id JOB_ID --status in_progress --data /path/to/metadata.json
 job-apply update --id JOB_ID --status awaiting_review
 job-apply update --id JOB_ID --status submitting
@@ -37,6 +38,7 @@ Copy `config.example.json` and replace the null resume path. Optionally set `res
 - `browser`: `playwright` (default, Playwright MCP), `terminal` (explicit terminal-browser selection), or legacy `auto` (also Playwright MCP). Missing Playwright MCP does not trigger automatic fallback. For existing configs, replace `vessel` with `playwright`; Vessel is no longer supported.
 - `submission_mode`: `review` or `auto`.
 - `history_path`: path to the writable JSON history.
+- `csv_path`: optional path to the generated submitted applications CSV. Defaults to `applications.csv` beside the history file. Relative paths resolve against the config file. It must differ from config, resume, structured resume, history, and accounts paths.
 - `password_pass_entry`: relative `pass` entry name, default `job-apply/shared-password`; never the password itself. Absolute paths, traversal, leading option prefixes, and control characters are rejected. Retrieval uses the user's existing pass/GPG environment.
 - `accounts_path`: private non-secret account registry, default `~/.local/state/job-apply/accounts.json`. Relative paths resolve against the config file. It must differ from config, resume, and history paths. New directories use `0700`; writes use atomic replacement with mode `0600` and a file lock. Use a private parent directory.
 - `profile`: candidate facts keyed by descriptive field names. `null` means unknown. Country-specific authorization questions should include country context.
@@ -48,10 +50,20 @@ Do not put secrets or private answers in a flake or Nix seed expression. Edit th
 
 ## History interface
 
-History contains `version: 1` and `jobs`, an ordered list. Every record includes `id`, `url`, `aliases`, `status`, `created_at`, `updated_at`, and `attempt`. Metadata may include `employer`, `role`, `application_url`, `blocker`, `evidence`, and `note` (short operational text only).
+History contains `version: 1` and `jobs`, an ordered list. Every record includes `id`, `url`, `aliases`, `status`, `created_at`, `updated_at`, and `attempt`. Metadata may include `employer`, `role`, `application_url`, `blocker`, `evidence`, and `note` (short operational text only), plus `contact_name`, `contact_email_phone`, `location`, `type`, `mode`, and `pay`. Confirmed submissions also have a helper-generated `submitted_at` timestamp.
 
 `queue` accepts HTTP(S) URLs, ignores blank/comment lines in files, removes repeated normalized URLs, and returns `selected_ids` in input order plus their current records. Existing records retain position and status. URL normalization lowercases scheme/host and removes fragments; it preserves path and all query parameters. Redirect aliases allow later inputs to find the same record. Duplicate aliases across records are errors requiring inspection.
 
 `update --data FILE` reads a JSON metadata object (`-` reads stdin). Allowed keys are the metadata above and `aliases` (a URL list). Unknown keys are rejected. For example, confirmation data is `{ "evidence": "Application received; receipt ABC123" }`. Submitted records require evidence and a prior `submitting` or `uncertain` state. Ordinary progress can move between `in_progress`, `awaiting_review`, and `blocked`; an explicit skip is recorded with `skipped`. A failed submission stays `uncertain` until inspected. Reset it to `in_progress` with `--retry-confirmed` only when non-submission was confirmed. Use `--reapply` to reset a submitted job to `pending`, incrementing the attempt and retaining prior confirmation in `previous_attempts`.
 
 `recover --id ID` converts a stranded `submitting` record to `uncertain`; other statuses are unchanged. It does not open a site or infer success. History uses a lock and atomic replacement. One agent/browser workflow must own a batch at a time: the file lock protects individual writes, not simultaneous browser sessions.
+
+## Submitted applications CSV
+
+Recording `submitted` automatically generates a UTF-8 CSV with these columns in order:
+
+`Company, Position, Link, Name of Contact, Email/Phone, Location, Type, Mode, Pay, Sent, Date (applied)`
+
+Company and Position use `employer` and `role`; Link uses the original posting URL. The contact columns describe the hiring contact. Type describes employment type, Mode describes remote/hybrid/on-site work, and Pay is the advertised compensation including currency and period when known. Unknown details are empty. Sent is `Yes`; Date (applied) is `YYYY-MM-DD`, using the UTC submission date. Legacy submitted records use `updated_at` when `submitted_at` is absent.
+
+The CSV is a generated report: each export atomically replaces it from JSON history, including confirmed previous reapplication attempts. Repeated exports do not duplicate rows. Keep manual spreadsheet edits in a separate copy. `export-csv` backfills existing submitted history or rebuilds a missing report; it creates a header-only file when there are no submissions. Pending, blocked, skipped, and uncertain attempts are excluded. A report failure leaves the confirmed submission in history; retry `export-csv` without applying again. New files use mode `0600`.
