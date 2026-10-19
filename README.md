@@ -67,17 +67,13 @@ Use `~/.agents/skills/job-apply/scripts/run-helper.sh` if `job-apply` is not on 
 
 ## Configuration
 
-Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8 `.txt`/`.md` file or a PDF. Optionally add `resume_json` as a structured JSON object with resume facts; it supplements the document for answering questions and is not uploaded. Relative resume/history paths resolve against this JSON's directory. Explicit helper `--config` takes priority over `JOB_APPLY_CONFIG`, then the default location.
+Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8 `.txt`/`.md` file or a PDF. Optionally set `resume_json` to the path of a JSON file containing structured resume facts; it supplements the document for answering questions and is not uploaded. Relative resume, structured resume, and history paths resolve against this JSON's directory. Explicit helper `--config` takes priority over `JOB_APPLY_CONFIG`, then the default location.
 
 ```json
 {
   "version": 1,
   "resume_path": "/home/you/Documents/resume.pdf",
-  "resume_json": {
-    "summary": "Product designer with experience in ...",
-    "skills": ["Figma", "Prototyping"],
-    "experience": []
-  },
+  "resume_json": "structured-resume.json",
   "browser": "playwright",
   "submission_mode": "review",
   "history_path": "~/.local/state/job-apply/history.json",

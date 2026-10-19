@@ -95,8 +95,8 @@ def validate_config(cfg, path, require_resume=True):
         fail("submission_mode must be review or auto")
     resume = cfg.get("resume_path")
     resume_json = cfg.get("resume_json")
-    if resume_json is not None and not isinstance(resume_json, dict):
-        fail("resume_json must be an object or null")
+    if resume_json is not None and (not isinstance(resume_json, str) or not resume_json.strip()):
+        fail("resume_json must be a nonempty path string or null")
     if resume is not None and (not isinstance(resume, str) or not resume.strip()):
         fail("resume_path must be a nonempty string or null")
     if require_resume:
@@ -114,6 +114,21 @@ def validate_config(cfg, path, require_resume=True):
     protected = {path.resolve()}
     if resume:
         protected.add(resolve_path(resume, path.parent).resolve())
+    resume_json_path = None
+    if resume_json:
+        resume_json_path = resolve_path(resume_json, path.parent).resolve()
+        if resume_json_path in protected:
+            fail("resume_json must differ from the config and resume paths")
+        if require_resume and (not resume_json_path.is_file() or not os.access(resume_json_path, os.R_OK)):
+            fail("Structured resume is not a readable file: " + str(resume_json_path))
+        if require_resume:
+            try:
+                structured_resume = read_json(resume_json_path)
+            except (json.JSONDecodeError, UnicodeDecodeError) as error:
+                fail("Structured resume is not valid UTF-8 JSON: " + str(error))
+            if not isinstance(structured_resume, dict):
+                fail("Structured resume JSON must contain an object")
+        protected.add(resume_json_path)
     if history_path in protected:
         fail("history_path must differ from the config and resume paths")
     entry = cfg.get("password_pass_entry", "job-apply/shared-password")
@@ -503,6 +518,7 @@ def main():
             resume = resolve_path(cfg["resume_path"], path.parent)
             if args.command == "validate":
                 output({"valid": True, "config_path": str(path), "resume_path": str(resume),
+                        "resume_json_path": str(resolve_path(cfg["resume_json"], path.parent)) if cfg.get("resume_json") else None,
                         "history_path": str(resolve_path(cfg.get("history_path",
                         "~/.local/state/job-apply/history.json"), path.parent)),
                         "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review")})
