@@ -85,7 +85,7 @@ def resolve_path(value, base):
 def validate_config(cfg, path, require_resume=True):
     if not isinstance(cfg, dict) or type(cfg.get("version")) is not int or cfg["version"] != 1:
         fail("Configuration must be an object with version 1")
-    allowed = {"version", "resume_path", "browser", "submission_mode", "history_path", "profile", "answers",
+    allowed = {"version", "resume_path", "resume_json", "browser", "submission_mode", "history_path", "profile", "answers",
                "password_pass_entry", "accounts_path"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
@@ -94,6 +94,9 @@ def validate_config(cfg, path, require_resume=True):
     if cfg.get("submission_mode", "review") not in {"review", "auto"}:
         fail("submission_mode must be review or auto")
     resume = cfg.get("resume_path")
+    resume_json = cfg.get("resume_json")
+    if resume_json is not None and not isinstance(resume_json, dict):
+        fail("resume_json must be an object or null")
     if resume is not None and (not isinstance(resume, str) or not resume.strip()):
         fail("resume_path must be a nonempty string or null")
     if require_resume:
