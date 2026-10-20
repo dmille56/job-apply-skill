@@ -131,6 +131,79 @@ class HelperTests(unittest.TestCase):
                 self.save_config()
                 self.assertIn("browser must be", self.run_cli("validate", ok=False))
 
+    def test_workflow_preferences_are_optional_booleans(self):
+        for setting in ("remember_approved_answers", "allow_account_creation"):
+            self.cfg.pop(setting, None)
+        self.save_config()
+        value = json.loads(self.run_cli("validate"))
+        self.assertIs(value["remember_approved_answers"], False)
+        self.assertIs(value["allow_account_creation"], False)
+        for setting in ("remember_approved_answers", "allow_account_creation"):
+            for invalid in (None, 0, 1, "true", [], {}):
+                with self.subTest(setting=setting, invalid=invalid):
+                    self.cfg[setting] = invalid
+                    self.save_config()
+                    self.assertIn(setting + " must be a boolean", self.run_cli("validate", ok=False))
+            self.cfg[setting] = True
+            self.save_config()
+            self.assertIs(json.loads(self.run_cli("validate"))[setting], True)
+
+    def remember(self, records, ok=True):
+        return self.run_cli("remember-answers", "--data", "-", data=json.dumps(records), ok=ok)
+
+    def test_remember_answers_merges_variants_without_losing_settings(self):
+        self.cfg["profile"] = {"full_name": "Fictional Candidate"}
+        self.save_config()
+        record = {"questions": ["When can you start?"], "answer": "Two weeks after accepting an offer."}
+        result = json.loads(self.remember([record]))
+        self.assertEqual(result, {"saved": True, "records_received": 1})
+        self.remember([dict(record, questions=[" WHEN  can you start? ", "What is your availability?"])])
+        self.remember([record])
+        cfg = json.loads(self.config.read_text())
+        self.assertEqual(cfg["answers"], [dict(record, questions=["When can you start?", "What is your availability?"])])
+        self.assertEqual({k: v for k, v in cfg.items() if k != "answers"},
+                         {k: v for k, v in self.cfg.items() if k != "answers"})
+        self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(record["answer"], json.dumps(result))
+
+    def test_remember_conflicts_and_invalid_batches_leave_config_unchanged(self):
+        record = {"questions": ["Availability?"], "answer": "Two weeks."}
+        self.remember([record])
+        before = self.config.read_bytes()
+        batches = [
+            [{"questions": ["Location?"], "answer": "Remote."}, dict(record, answer="Tomorrow.")],
+            [{"questions": ["Location?"], "answer": "Remote."}, {"questions": [], "answer": "Invalid."}],
+            {"answers": [record]},
+            [dict(record, extra="unsupported")],
+        ]
+        for batch in batches:
+            with self.subTest(batch=batch):
+                self.remember(batch, ok=False)
+                self.assertEqual(self.config.read_bytes(), before)
+        self.config.write_text("{broken")
+        self.remember([record], ok=False)
+        self.assertEqual(self.config.read_text(), "{broken")
+
+    def test_remember_keeps_scopes_and_qualifiers_separate(self):
+        records = [
+            {"questions": ["US work authorization?"], "answer": "Yes."},
+            {"questions": ["Canada work authorization?"], "answer": "No."},
+            {"questions": ["Availability?"], "answer": "Two weeks."},
+            {"questions": ["Availability?"], "answer": "One month.", "employer": "Example"},
+            {"questions": ["Availability?"], "answer": "Next month.", "role": "Contractor"},
+        ]
+        self.remember(records)
+        self.remember([dict(records[3], employer=" EXAMPLE ")])
+        self.assertEqual(json.loads(self.config.read_text())["answers"], records)
+
+    def test_remember_concurrent_saves_preserve_both_records(self):
+        records = [{"questions": [question], "answer": answer} for question, answer in
+                   (("Availability?", "Two weeks."), ("Preferred work arrangement?", "Remote."))]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(lambda record: self.remember([record]), records))
+        saved = json.loads(self.config.read_text())["answers"]
+        self.assertCountEqual(saved, records)
+
     def test_account_config_compatibility_and_path_guards(self):
         self.cfg.pop("password_pass_entry")
         self.cfg.pop("accounts_path")

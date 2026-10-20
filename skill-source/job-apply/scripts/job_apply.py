@@ -90,13 +90,17 @@ def validate_config(cfg, path, require_resume=True):
     if not isinstance(cfg, dict) or type(cfg.get("version")) is not int or cfg["version"] != 1:
         fail("Configuration must be an object with version 1")
     allowed = {"version", "resume_path", "resume_json", "browser", "submission_mode", "history_path", "profile", "answers",
-               "password_pass_entry", "accounts_path", "csv_path"}
+               "password_pass_entry", "accounts_path", "csv_path",
+               "remember_approved_answers", "allow_account_creation"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
     if cfg.get("browser", "playwright") not in {"auto", "playwright", "terminal"}:
         fail("browser must be playwright, terminal, or auto (Playwright MCP); replace legacy vessel with playwright")
     if cfg.get("submission_mode", "review") not in {"review", "auto"}:
         fail("submission_mode must be review or auto")
+    for setting in ("remember_approved_answers", "allow_account_creation"):
+        if type(cfg.get(setting, False)) is not bool:
+            fail(setting + " must be a boolean")
     resume = cfg.get("resume_path")
     resume_json = cfg.get("resume_json")
     if resume_json is not None and (not isinstance(resume_json, str) or not resume_json.strip()):
@@ -154,7 +158,11 @@ def validate_config(cfg, path, require_resume=True):
     profile = cfg.get("profile", {})
     if not isinstance(profile, dict):
         fail("profile must be an object")
-    answers = cfg.get("answers", [])
+    validate_answers(cfg.get("answers", []))
+    return cfg
+
+
+def validate_answers(answers):
     if not isinstance(answers, list):
         fail("answers must be an array")
     for item in answers:
@@ -169,7 +177,45 @@ def validate_config(cfg, path, require_resume=True):
         for scope in ("employer", "role"):
             if scope in item and (not isinstance(item[scope], str) or not item[scope].strip()):
                 fail(scope + " must be a nonempty string when supplied")
-    return cfg
+
+
+def remember_answers(args):
+    """Persist reviewed records; semantic generalization belongs to the agent."""
+    incoming = read_json(args.data)
+    validate_answers(incoming)
+    path = config_path(args)
+    with locked(path):
+        _, cfg = load_config(args)
+        answers = cfg.setdefault("answers", [])
+
+        def normalized(text):
+            return " ".join(text.split()).casefold()
+
+        def scope(record):
+            return tuple(normalized(record.get(key, "")) for key in ("employer", "role"))
+
+        for record in incoming:
+            questions = {normalized(q) for q in record["questions"]}
+            matches = [item for item in answers if scope(item) == scope(record)
+                       and questions & {normalized(q) for q in item["questions"]}]
+            if any(item["answer"].strip() != record["answer"].strip() for item in matches):
+                fail("Conflicting saved answer; review and explicitly correct the existing record before saving")
+            if matches:
+                target = matches[0]
+                known = {normalized(q) for q in target["questions"]}
+                for item in [*matches[1:], record]:
+                    for question in item["questions"]:
+                        if normalized(question) not in known:
+                            target["questions"].append(question)
+                            known.add(normalized(question))
+                for duplicate in matches[1:]:
+                    answers.remove(duplicate)
+            else:
+                cleaned = dict(record, questions=list(dict.fromkeys(record["questions"])))
+                answers.append(cleaned)
+        validate_config(cfg, path, require_resume=False)
+        atomic_json(path, cfg)
+    output({"saved": True, "records_received": len(incoming)})
 
 
 def load_config(args, require_resume=False):
@@ -537,6 +583,8 @@ def main():
     subs.add_parser("history")
     subs.add_parser("export-csv", help="Rebuild the submitted applications CSV from history")
     subs.add_parser("password-get", help="Print the shared password's first line from the configured pass entry (secret output)")
+    sub = subs.add_parser("remember-answers", help="Save reviewed reusable answer records without overwriting conflicts")
+    sub.add_argument("--data", required=True, help="JSON answer array; - for stdin")
     for name in ("account-lookup", "account-record"):
         sub = subs.add_parser(name, help="Look up or record non-secret portal account progress")
         sub.add_argument("--origin", required=True, help="HTTPS portal origin only")
@@ -568,6 +616,8 @@ def main():
             email(args)
         elif args.command == "password-get":
             password_get(args)
+        elif args.command == "remember-answers":
+            remember_answers(args)
         elif args.command == "export-csv":
             export_csv(args)
         elif args.command in {"account-lookup", "account-record"}:
@@ -584,7 +634,9 @@ def main():
                         "history_path": str(resolve_path(cfg.get("history_path",
                         "~/.local/state/job-apply/history.json"), path.parent)),
                         "csv_path": str(csv_path(cfg, path.parent)),
-                        "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review")})
+                        "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review"),
+                        "remember_approved_answers": cfg.get("remember_approved_answers", False),
+                        "allow_account_creation": cfg.get("allow_account_creation", False)})
             elif resume.suffix.lower() == ".pdf":
                 if not shutil.which("pdftotext"):
                     fail("PDF extraction requires pdftotext (Poppler); use the Nix package or install Poppler")

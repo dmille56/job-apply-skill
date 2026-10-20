@@ -6,6 +6,7 @@
 <h1>Example Company: Software Engineer</h1>
 <p>This local fixture sends no data. Use a fictional candidate and test resume.</p>
 <form id="application">
+  <fieldset id="first-step"><legend>Profile and experience</legend>
   <label>Full name <input name="name" required autocomplete="name"></label>
   <label>Email <input name="email" type="email" required autocomplete="email"></label>
   <label>Resume <input name="resume" type="file" accept=".pdf,.txt,.md" required></label>
@@ -22,11 +23,41 @@
   <label>Fixture behavior
     <select id="behavior"><option value="confirm">Show confirmation</option><option value="ambiguous">Ambiguous result</option><option value="blocked">Simulate login blocker</option></select>
   </label>
-  <button>Submit application</button>
+  <button type="button" id="next">Continue</button>
+  </fieldset>
+  <fieldset id="second-step" hidden disabled><legend>Availability and compensation</legend>
+    <p>These required questions are revealed only after completing the first step.</p>
+    <label>When can you start? <input name="availability" required></label>
+    <label>Expected annual compensation (USD, full-time) <input name="compensation" required></label>
+    <button type="button" id="back">Back</button>
+    <button>Submit application</button>
+  </fieldset>
 </form>
 <p id="result" role="status"></p>
 <script>
 const form = document.querySelector('form');
+const first = document.querySelector('#first-step');
+const second = document.querySelector('#second-step');
+document.querySelector('#next').addEventListener('click', () => {
+  for (const field of first.querySelectorAll('input,select,textarea')) {
+    if (!field.reportValidity()) return;
+  }
+  first.hidden = true;
+  second.hidden = false;
+  second.disabled = false;
+});
+document.querySelector('#back').addEventListener('click', () => {
+  first.hidden = false;
+  second.hidden = true;
+  second.disabled = true;
+});
+// Enter on the first page advances without triggering a mock submission.
+form.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !first.hidden && event.target.tagName !== 'TEXTAREA') {
+    event.preventDefault();
+    document.querySelector('#next').click();
+  }
+});
 const arrangement = document.querySelector('#arrangement');
 arrangement.addEventListener('change', () => {
   const active = arrangement.value === 'Relocation';

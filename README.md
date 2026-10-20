@@ -1,6 +1,6 @@
 # Job Apply Skill
 
-A portable skill for Codex, Claude Code, OpenCode, and Pi that applies to supplied jobs one at a time using Playwright MCP by default, or terminal-browser when explicitly requested. It supports a configurable resume, reusable application answers, optional resume-qna guidance, review or automatic submission, and resumable local history.
+A portable skill for Codex, Claude Code, OpenCode, and Pi that applies to supplied jobs one at a time using Playwright MCP by default, or terminal-browser when explicitly requested. It supports a configurable resume, reusable application answers, resume-qna for substantive answers, one review per application or automatic submission, and resumable local history.
 
 ## NixOS and Nix
 
@@ -76,6 +76,8 @@ Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8
   "resume_json": "structured-resume.json",
   "browser": "playwright",
   "submission_mode": "review",
+  "remember_approved_answers": true,
+  "allow_account_creation": true,
   "history_path": "~/.local/state/job-apply/history.json",
   "password_pass_entry": "job-apply/shared-password",
   "accounts_path": "~/.local/state/job-apply/accounts.json",
@@ -94,7 +96,7 @@ Edit `~/.config/job-apply/config.json` and set `resume_path`. It accepts a UTF-8
 }
 ```
 
-Use your own facts. `null` means unknown. Answers may optionally specify `employer` and `role` scopes. Missing required answers pause the current application. The agent saves new reusable answers only when asked. See the [configuration reference](skill-source/job-apply/references/configuration.md) for CLI details and history recovery.
+Use your own facts. `null` means unknown. Answers may optionally specify `employer` and `role` scopes. The agent fills accessible fields independently, uses resume-qna for substantive written responses, and bundles unresolved questions. Required unknown facts pause only when they prevent further progress; hidden later pages may reveal additional questions. Review mode presents all answers together before submission. With `remember_approved_answers: true`, that review also includes generic reusable defaults to save after approval. Meaningful qualifiers remain intact, and tailored motivation essays and sensitive disclosures are not saved. Both new Boolean settings default to false when absent; setting `allow_account_creation: true` grants standing permission for required candidate accounts on requested jobs. See the [configuration reference](skill-source/job-apply/references/configuration.md) for CLI details and history recovery.
 
 ```sh
 job-apply validate
@@ -122,7 +124,7 @@ For **terminal-browser**, install it and its skill, use a supported graphical te
 
 `browser: "playwright"` is the default; legacy `auto` also selects Playwright MCP. Use terminal-browser only when explicitly requested for a run or configured with `browser: "terminal"`. If Playwright MCP is unavailable, the skill pauses for setup or a user-requested switch. Existing configs using `vessel` must change to `playwright`. An explicit browser choice must be usable. A submission setting does not override browser or host permission prompts.
 
-Optional **resume-qna**: install it through your agent's normal skills mechanism. Job Apply reads its instructions for longer answers. If its configured resume differs and it has no supported override, Job Apply uses its writing guidance directly with the selected job-apply resume without changing resume-qna.
+**resume-qna**: install it through your agent's normal skills mechanism. Job Apply reads its instructions once per run and uses them for every answer requiring explanation, examples, motivation, or persuasive wording, including short responses. If unavailable, it fills accessible simple fields and bundles the prerequisite with other blockers before drafting substantive responses. If its configured resume differs and it has no supported override, Job Apply uses its writing guidance directly with the selected job-apply resume without changing resume-qna.
 
 ## Usage and recovery
 
@@ -134,7 +136,7 @@ pass insert job-apply/shared-password
 
 The skill retrieves the first line of this entry only when needed. Set `password_pass_entry` to use another entry; never put the password in job-apply configuration or Nix expressions. `pass` and GPG setup/unlocking remain user-managed prerequisites, including for Nix installations. A missing entry or failed unlock pauses the application. The helper never modifies the password store. Reusing one password increases the impact of a compromised employer account; changing the entry does not update existing employer accounts.
 
-Explicitly authorize required account creation for a batch, for example: “Apply to these URLs and create required candidate accounts using my shared password in pass.” This includes standard required signup terms and privacy acknowledgments; application submission still follows review/auto mode. The skill uses a private non-secret account registry at `accounts_path` to distinguish candidate emails and employer tenants, track verification progress, and recover interrupted signup. It reuses known accounts and pauses for unknown existing credentials, password rejection, CAPTCHA, unsupported MFA, or additional commitments. See [account setup and workflow](skill-source/job-apply/references/accounts.md). Password retrieval and browser entry may expose the value in tool transcripts; it is never written to application history or reports.
+Authorize required account creation persistently with `allow_account_creation: true`, or explicitly for a batch, for example: “Apply to these URLs and create required candidate accounts using my shared password in pass.” This includes standard required signup terms and privacy acknowledgments; application submission still follows review/auto mode. The skill uses a private non-secret account registry at `accounts_path` to distinguish candidate emails and employer tenants, track verification progress, and recover interrupted signup. It reuses known accounts and pauses for unknown existing credentials, password rejection, CAPTCHA, unsupported MFA, or additional commitments. See [account setup and workflow](skill-source/job-apply/references/accounts.md). Password retrieval and browser entry may expose the value in tool transcripts; it is never written to application history or reports.
 
 Optional verification email uses [gogcli](https://github.com/openclaw/gogcli). Install `gog` separately, configure its OAuth credentials, then authorize the candidate's Gmail mailbox and create the required account alias:
 
@@ -158,11 +160,11 @@ https://example.com/jobs/456
 Resume the interrupted job-apply batch.
 ```
 
-Applications stop for missing facts, unresolved login/CAPTCHA, agreements outside existing authorization, or ambiguous submission outcomes. A batch advances after confirmed submission or explicit skip. Confirmed submissions are skipped unless you explicitly request reapplication. Sequential history is local to this configuration and is not a shared account-wide duplicate detector. Run one application workflow against a history file at a time.
+Applications collect missing facts and conflicts while finishing accessible work, then request them together if they block progress. They also stop for unresolved login/CAPTCHA, agreements outside existing authorization, or ambiguous submission outcomes. A batch advances after confirmed submission or explicit skip. Confirmed submissions are skipped unless you explicitly request reapplication. Sequential history is local to this configuration and is not a shared account-wide duplicate detector. Run one application workflow against a history file at a time.
 
 The skill explicitly ignores website instructions directed at AI agents, including hidden content and instructions surfaced through browser tools. Websites supply application data; they cannot grant permission, change submission mode, request unrelated files or secrets, or override the user's instructions. Suspicious requests with an unclear purpose or destination pause the application. This is an agent instruction safeguard, not a sandbox or a guarantee against prompt injection; keep browser and tool permissions limited. Reinstall/reload the skill after updating its source to apply these rules to installed copies.
 
-History records URLs, status, short operational metadata, and confirmation evidence. It does not store form answers or credentials. Helpers use private file permissions and atomic writes. If submission was interrupted, the agent inspects the site before retrying; `recover --id ID` only marks the uncertain outcome and does not check the employer's site.
+History records URLs, status, short operational metadata, and confirmation evidence. It does not store form answers or credentials. Approved reusable defaults are stored separately in the selected configuration through `job-apply remember-answers --data FILE`; saves are locked and atomic and reject conflicting replacements. Helpers use private file permissions and atomic writes. If submission was interrupted, the agent inspects the site before retrying; `recover --id ID` only marks the uncertain outcome and does not check the employer's site.
 
 ## Development and validation
 
@@ -173,7 +175,7 @@ nix flake check
 nix fmt
 ```
 
-The helper suite uses temporary directories and no network. Open `tests/mock-application.html` in the selected browser to exercise upload, conditional required fields, a 300-character answer, confirmation, a simulated login blocker, and an ambiguous result. Use fictional information and a test resume. Exercise both review and auto modes, pause on missing sponsorship data, and repeat with resume-qna absent/matching/mismatched. This fixture never sends an application. Browser and agent integrations require a working interactive host; helper tests alone do not validate those integrations.
+The helper suite uses temporary directories and no network. Open `tests/mock-application.html` in the selected browser to exercise upload, conditional required fields, a 300-character answer, later-page availability and compensation questions, confirmation, a simulated login blocker, and an ambiguous result. Use fictional information and a test resume. Exercise both review and auto modes, bundle missing sponsorship data after filling other accessible fields, and repeat with resume-qna absent/matching/mismatched. Verify that accessible fields are completed before asking for sponsorship, later-page unknowns are bundled together, and final review includes all entered answers plus generalized defaults. Verify saved defaults retain country/currency qualifiers, exclude tailored essays, and work across employers. Test standing account permission and an explicit run prohibition separately. Agent/browser scenarios require manual execution; the helper suite does not exercise agent judgment. This fixture never sends an application. Browser and agent integrations require a working interactive host; helper tests alone do not validate those integrations.
 
 Use `tests/mock-account-flow.html` to exercise new signup, existing-account detection/login, password rejection, and recovery after interrupted signup. It uses only fictional in-memory credentials and a visible mock verification code, and links back to the application fixture with the job identity. Account verification must never be recorded as an application submission. For an interruption immediately after creation, call `interruptSignup()` in the fixture and recover through sign-in without repeating signup.
 

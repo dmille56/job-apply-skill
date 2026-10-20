@@ -18,7 +18,7 @@ One entry supplies the same password for new accounts. Reusing a password increa
 
 ## Authorization
 
-An explicit instruction to create required accounts for the current supplied batch authorizes signup for those jobs. If absent, ask at the first account gate; the user can authorize the batch or only that portal. Do not ask again within that authorization. No persistent account-creation setting is implied. This permission includes required standard candidate account terms and privacy acknowledgments. Inspect their actual purpose: ask about additional commitments or unusual agreements, and leave optional marketing/talent-pool consents unchecked. Submission still follows review/auto mode independently.
+Resolve explicit run instructions first, then `allow_account_creation` (false when absent). An explicit instruction to create required accounts for the current supplied batch, or `allow_account_creation: true`, authorizes signup for those requested jobs. An explicit prohibition for the run overrides the setting. Otherwise ask once at the first account gate; the user can authorize the batch or only that portal. Do not ask again within existing authorization. Enabling the setting is standing permission for future requested jobs, not permission to add jobs or create unrelated accounts. This permission includes required standard candidate account terms and privacy acknowledgments. Inspect their actual purpose: ask about additional commitments or unusual agreements, and leave optional marketing/talent-pool consents unchecked. Submission still follows review/auto mode independently.
 
 ## Account identity and progress
 

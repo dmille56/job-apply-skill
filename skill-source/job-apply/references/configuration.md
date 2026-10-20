@@ -1,11 +1,12 @@
 # Configuration and local helper
 
-`job-apply` is the Nix-installed helper. If it is not on PATH, substitute `<skill-dir>/scripts/run-helper.sh`. Without Nix that launcher requires Python 3 on PATH. Put global `--config PATH` before the subcommand.
+`job-apply` is the Nix-installed helper. Prefer `<skill-dir>/scripts/run-helper.sh` when following the loaded skill so instructions and helper versions match, even if PATH still contains an older package. The examples below use `job-apply` for brevity. Without Nix that launcher requires Python 3 on PATH. Put global `--config PATH` before the subcommand.
 
 ```sh
 job-apply init
 job-apply --config /path/to/config.json validate
 job-apply resume-text
+job-apply remember-answers --data /path/to/approved-answers.json
 job-apply password-get  # Secret output; only when needed for the current account gate
 job-apply account-lookup --origin https://careers.example.com --tenant employer-careers --email you@example.com
 job-apply account-record --origin https://careers.example.com --tenant employer-careers --email you@example.com --stage ready --password-source shared_pass
@@ -36,7 +37,9 @@ Copy `config.example.json` and replace the null resume path. Optionally set `res
 - `resume_path`: path to a UTF-8 text or PDF resume. The file is uploaded unchanged.
 - `resume_json`: optional path to a UTF-8 JSON file containing a structured resume object. It supplements `resume_path` and is not uploaded or converted to another file. Relative paths resolve against the config file. The helper checks that it is readable JSON containing an object.
 - `browser`: `playwright` (default, Playwright MCP), `terminal` (explicit terminal-browser selection), or legacy `auto` (also Playwright MCP). Missing Playwright MCP does not trigger automatic fallback. For existing configs, replace `vessel` with `playwright`; Vessel is no longer supported.
-- `submission_mode`: `review` or `auto`.
+- `submission_mode`: `review` or `auto`. Review collects one complete application review before submission; ordinary filling/navigation does not need approval.
+- `remember_approved_answers`: Boolean, default `false`. When true, present generalized reusable defaults with the final application review and save them after approval. Automatic submission does not approve unreviewed defaults. Explicit requests to remember answers also authorize saving when this setting is false.
+- `allow_account_creation`: Boolean, default `false`. When true, authorizes required candidate accounts and standard signup terms for requested jobs. Explicit run restrictions override this setting; it does not authorize unrelated accounts or unusual commitments.
 - `history_path`: path to the writable JSON history.
 - `csv_path`: optional path to the generated submitted applications CSV. Defaults to `applications.csv` beside the history file. Relative paths resolve against the config file. It must differ from config, resume, structured resume, history, and accounts paths.
 - `password_pass_entry`: relative `pass` entry name, default `job-apply/shared-password`; never the password itself. Absolute paths, traversal, leading option prefixes, and control characters are rejected. Retrieval uses the user's existing pass/GPG environment.
@@ -67,3 +70,20 @@ Recording `submitted` automatically generates a UTF-8 CSV with these columns in 
 Company and Position use `employer` and `role`; Link uses the original posting URL. The contact columns describe the hiring contact. Type describes employment type, Mode describes remote/hybrid/on-site work, and Pay is the advertised compensation including currency and period when known. Unknown details are empty. Sent is `Yes`; Date (applied) is `YYYY-MM-DD`, using the UTC submission date. Legacy submitted records use `updated_at` when `submitted_at` is absent.
 
 The CSV is a generated report: each export atomically replaces it from JSON history, including confirmed previous reapplication attempts. Repeated exports do not duplicate rows. Keep manual spreadsheet edits in a separate copy. `export-csv` backfills existing submitted history or rebuilds a missing report; it creates a header-only file when there are no submissions. Pending, blocked, skipped, and uncertain attempts are excluded. A report failure leaves the confirmed submission in history; retry `export-csv` without applying again. New files use mode `0600`.
+
+## Saving approved reusable answers
+
+`remember-answers --data FILE` accepts a JSON array using the existing `answers` record schema (`--data -` reads stdin). The agent must generalize and obtain approval before calling it. It does not infer approval from submission mode or enforce the automatic-memory preference; an explicit request to remember answers is also sufficient authorization.
+
+```json
+[
+  {
+    "questions": ["When can you start?", "What is your availability?"],
+    "answer": "Two weeks after accepting an offer."
+  }
+]
+```
+
+Prefer generic facts/preferences to employer-specific wording. Preserve meaningful qualifiers, including country and compensation currency/period. Scope to employer or role only when necessary; do not save tailored motivation essays or sensitive disclosures. The agent matches semantic equivalents before calling the helper.
+
+The helper locks the selected configuration, rereads and validates it, and atomically saves with private file permissions. Matching uses overlapping question strings and equal employer/role scopes, normalized for whitespace and case. Equal answers (ignoring outer whitespace) merge question variants; differing answers reject the entire incoming batch without changing configuration. Other scopes remain separate. Semantic conflicts and sensitive-content filtering remain the agent's responsibility. Successful output contains counts, not answer values. Existing settings/profile/answers are retained; explicitly approved corrections to existing conflicting records require a separate validated edit under the same config lock, never an automatic replacement.
