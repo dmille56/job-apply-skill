@@ -151,6 +151,63 @@ class HelperTests(unittest.TestCase):
     def remember(self, records, ok=True):
         return self.run_cli("remember-answers", "--data", "-", data=json.dumps(records), ok=ok)
 
+    def test_application_policies_are_opt_in_and_round_trip(self):
+        self.cfg.pop("application_policies", None)
+        self.save_config()
+        self.assertEqual(json.loads(self.run_cli("validate"))["application_policies"], {})
+        self.cfg["application_policies"] = {
+            "compensation": "negotiable_minimum",
+            "experience": "related_estimates",
+            "consents": "accept_all_application",
+            "work_arrangements": {
+                "remote": True, "hybrid": True, "onsite": True,
+                "onsite_locations": ["Example metro area"],
+                "max_onsite_days_per_week": 5,
+            },
+        }
+        self.save_config()
+        self.assertEqual(json.loads(self.run_cli("validate"))["application_policies"],
+                         self.cfg["application_policies"])
+        self.remember([{"questions": ["When can you start?"], "answer": "Two weeks."}])
+        self.assertEqual(json.loads(self.config.read_text())["application_policies"],
+                         self.cfg["application_policies"])
+        previous = self.config.read_bytes()
+        self.run_cli("install", "--home", str(self.home))
+        self.assertEqual(self.config.read_bytes(), previous)
+        installed = self.home / ".agents/skills/job-apply/scripts/job_apply.py"
+        result = subprocess.run([sys.executable, str(installed), "--config", str(self.config), "validate"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["application_policies"], self.cfg["application_policies"])
+
+    def test_invalid_application_policies_do_not_modify_config(self):
+        invalid = [None, [], "accept", {"unknown": True}]
+        for key in ("compensation", "experience", "consents"):
+            invalid.extend({key: value} for value in (None, True, 1, [], {}, "unknown"))
+        invalid.extend({"work_arrangements": value} for value in (None, [], True, {"unknown": True}))
+        for key in ("remote", "hybrid", "onsite"):
+            invalid.extend({"work_arrangements": {key: value}} for value in (None, 0, 1, "true", []))
+        invalid.extend({"work_arrangements": {"onsite_locations": value}}
+                       for value in (None, "Seattle", [], [""], [" "], [1]))
+        invalid.extend({"work_arrangements": {"max_onsite_days_per_week": value}}
+                       for value in (None, True, -1, 8, 3.5, "5"))
+        for policies in invalid:
+            with self.subTest(policies=policies):
+                self.cfg["application_policies"] = policies
+                self.save_config()
+                previous = self.config.read_bytes()
+                self.assertIn("application_policies", self.run_cli("validate", ok=False))
+                self.assertEqual(self.config.read_bytes(), previous)
+
+    def test_partial_work_policies_preserve_explicit_false_and_zero(self):
+        for work in ({}, {"remote": False}, {"hybrid": False, "onsite": False},
+                     {"max_onsite_days_per_week": 0}, {"max_onsite_days_per_week": 7}):
+            with self.subTest(work=work):
+                self.cfg["application_policies"] = {"work_arrangements": work}
+                self.save_config()
+                self.assertEqual(json.loads(self.run_cli("validate"))["application_policies"],
+                                 self.cfg["application_policies"])
+
     def test_remember_answers_merges_variants_without_losing_settings(self):
         self.cfg["profile"] = {"full_name": "Fictional Candidate"}
         self.save_config()

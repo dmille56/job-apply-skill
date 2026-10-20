@@ -6,6 +6,7 @@
   "submission_mode": "review",
   "remember_approved_answers": false,
   "allow_account_creation": false,
+  "application_policies": {},
   "history_path": "~/.local/state/job-apply/history.json",
   "password_pass_entry": "job-apply/shared-password",
   "accounts_path": "~/.local/state/job-apply/accounts.json",

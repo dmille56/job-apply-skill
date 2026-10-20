@@ -86,14 +86,49 @@ def resolve_path(value, base):
     return path if path.is_absolute() else base / path
 
 
+def validate_application_policies(policies):
+    """Validate opt-in agent policies, not candidate facts or browser answers."""
+    choices = {
+        "compensation": {"negotiable_minimum"},
+        "experience": {"related_estimates"},
+        "consents": {"accept_all_application"},
+    }
+    if not isinstance(policies, dict):
+        fail("application_policies must be an object")
+    if set(policies) - (set(choices) | {"work_arrangements"}):
+        fail("Unknown application_policies keys")
+    for key, values in choices.items():
+        if key in policies and (not isinstance(policies[key], str) or policies[key] not in values):
+            fail("application_policies." + key + " must be " + ", ".join(sorted(values)))
+    if "work_arrangements" not in policies:
+        return
+    work = policies["work_arrangements"]
+    allowed = {"remote", "hybrid", "onsite", "onsite_locations", "max_onsite_days_per_week"}
+    if not isinstance(work, dict) or set(work) - allowed:
+        fail("application_policies.work_arrangements must be an object with supported keys")
+    for key in ("remote", "hybrid", "onsite"):
+        if key in work and type(work[key]) is not bool:
+            fail("application_policies.work_arrangements." + key + " must be a boolean")
+    if "onsite_locations" in work:
+        locations = work["onsite_locations"]
+        if (not isinstance(locations, list) or not locations or
+                any(not isinstance(item, str) or not item.strip() for item in locations)):
+            fail("application_policies.work_arrangements.onsite_locations must be a nonempty list of locations")
+    if "max_onsite_days_per_week" in work:
+        days = work["max_onsite_days_per_week"]
+        if type(days) is not int or not 0 <= days <= 7:
+            fail("application_policies.work_arrangements.max_onsite_days_per_week must be an integer from 0 to 7")
+
+
 def validate_config(cfg, path, require_resume=True):
     if not isinstance(cfg, dict) or type(cfg.get("version")) is not int or cfg["version"] != 1:
         fail("Configuration must be an object with version 1")
     allowed = {"version", "resume_path", "resume_json", "browser", "submission_mode", "history_path", "profile", "answers",
                "password_pass_entry", "accounts_path", "csv_path",
-               "remember_approved_answers", "allow_account_creation"}
+               "remember_approved_answers", "allow_account_creation", "application_policies"}
     if set(cfg) - allowed:
         fail("Unknown configuration keys: " + ", ".join(sorted(set(cfg) - allowed)))
+    validate_application_policies(cfg.get("application_policies", {}))
     if cfg.get("browser", "playwright") not in {"auto", "playwright", "terminal"}:
         fail("browser must be playwright, terminal, or auto (Playwright MCP); replace legacy vessel with playwright")
     if cfg.get("submission_mode", "review") not in {"review", "auto"}:
@@ -636,7 +671,8 @@ def main():
                         "csv_path": str(csv_path(cfg, path.parent)),
                         "browser": cfg.get("browser", "playwright"), "submission_mode": cfg.get("submission_mode", "review"),
                         "remember_approved_answers": cfg.get("remember_approved_answers", False),
-                        "allow_account_creation": cfg.get("allow_account_creation", False)})
+                        "allow_account_creation": cfg.get("allow_account_creation", False),
+                        "application_policies": cfg.get("application_policies", {})})
             elif resume.suffix.lower() == ".pdf":
                 if not shutil.which("pdftotext"):
                     fail("PDF extraction requires pdftotext (Poppler); use the Nix package or install Poppler")
