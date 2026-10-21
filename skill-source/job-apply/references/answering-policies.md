@@ -2,6 +2,8 @@
 
 Read this reference when `application_policies` is configured. These are opt-in candidate preferences applied by the agent, not a helper-driven form-filling engine. The helper validates their shape; it cannot verify estimates, interpret a form, or enforce website trust boundaries. An absent policy grants no new preference or permission. Explicit run instructions override policies; policies override legacy answering instructions and reusable answers for the behavior they cover. Candidate facts remain factual.
 
+Apply established preferences and authorized estimates while filling, without asking for intermediate confirmation. Flag uncertain interpretations and estimates in the main skill's consolidated review with their factual basis. Defer unsupported facts, conflicts, and uncovered preferences to that review whenever navigation allows; if they block progress, complete independent work first and bundle the blockers into one request. These policies do not authorize guessing missing personal facts.
+
 ## Compensation: `negotiable_minimum`
 
 Apply to desired/expected salary, pay, and compensation questions, including optional fields. Do not ask for clarification of a preference already established by this policy.
